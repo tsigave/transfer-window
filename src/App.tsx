@@ -9,6 +9,7 @@ const initialDate = new Date('2160-01-01T00:00:00.000Z')
 const AU = 149_597_870_700
 const yearMicros = 365.25 * 86_400 * 1e6
 const formatNumber = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 3 })
+const playbackRates = [1, 10_000, 1_000_000, 100_000_000]
 
 function shiftCalendarYears(epochTdbMicros: number, years: number): number {
   const date = dateFromEpoch(epochTdbMicros)
@@ -192,7 +193,7 @@ export default function App() {
           onFocus={focusBody}
         />
         <div className="time-control">
-          <div className="rate-buttons" title="相对真实时间的连续播放倍率"><button className={timeRate === 0 ? 'active' : ''} onClick={() => setTimeRate(0)}>Ⅱ</button>{[1, 100, 10_000].map((rate) => <button key={rate} className={timeRate === rate ? 'active' : ''} onClick={() => setTimeRate(rate)}>×{formatNumber.format(rate)}</button>)}</div>
+          <div className="rate-buttons" title="相对真实时间的连续播放倍率"><button className={timeRate === 0 ? 'active' : ''} onClick={() => setTimeRate(0)}>Ⅱ</button>{playbackRates.map((rate) => <button key={rate} className={timeRate === rate ? 'active' : ''} onClick={() => setTimeRate(rate)}>×{formatNumber.format(rate)}</button>)}</div>
           <button onClick={() => jumpTime((value) => shiftCalendarYears(value, -1))}>− 1 年</button>
           <input aria-label="时间轴" type="range" min={-10} max={10} step={0.1} value={(epochTdbMicros - epochFromDate(initialDate)) / yearMicros} onChange={(event) => { setTimeRate(0); setEpochTdbMicros(epochFromDate(initialDate) + Number(event.target.value) * yearMicros) }} />
           <button onClick={() => jumpTime((value) => shiftCalendarYears(value, 1))}>+ 1 年</button>

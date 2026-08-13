@@ -38,8 +38,9 @@ interface BodyVisual {
   body: Body
   mesh: THREE.Mesh<THREE.SphereGeometry, THREE.MeshStandardMaterial>
   material: THREE.MeshStandardMaterial
-  baseScale: number
+  labelObject: CSS2DObject
   label: HTMLDivElement
+  selectionHalo: THREE.Sprite
 }
 
 interface ScopeModel {
@@ -59,11 +60,27 @@ function bodyColor(body: Body): number {
 
 function bodyRadius(body: Body, isFocus: boolean, isGlobal: boolean): number {
   if (isFocus) return body.body_class === 'star' ? 7 : 5.5
+  if (body.body_class === 'star') return 4.5
   const physicalHint = Math.log10(Math.max(body.mean_radius_m, 1)) - 3.7
   if (body.body_class === 'planet') return THREE.MathUtils.clamp(physicalHint, 1.8, 3.6)
   if (body.body_class === 'dwarf_planet') return isGlobal ? 1.2 : 1.7
   return isGlobal ? 0.85 : 1.35
 }
+
+const textureUrls: Record<string, string> = {
+  sun: new URL('../assets/textures/sun.jpg', import.meta.url).href,
+  mercury: new URL('../assets/textures/mercury.jpg', import.meta.url).href,
+  venus: new URL('../assets/textures/venus_atmosphere.jpg', import.meta.url).href,
+  earth: new URL('../assets/textures/earth_daymap.jpg', import.meta.url).href,
+  moon: new URL('../assets/textures/moon.jpg', import.meta.url).href,
+  mars: new URL('../assets/textures/mars.jpg', import.meta.url).href,
+  jupiter: new URL('../assets/textures/jupiter.jpg', import.meta.url).href,
+  saturn: new URL('../assets/textures/saturn.jpg', import.meta.url).href,
+  uranus: new URL('../assets/textures/uranus.jpg', import.meta.url).href,
+  neptune: new URL('../assets/textures/neptune.jpg', import.meta.url).href,
+}
+
+const saturnRingUrl = new URL('../assets/textures/saturn_ring.png', import.meta.url).href
 
 function relativePosition(body: Body, focus: Body, epochTdbMicros: number): [number, number, number] {
   if (body.id === focus.id) return [0, 0, 0]
@@ -83,7 +100,7 @@ function displayPosition(
   const normalized = global
     ? Math.log1p(actualRadius / (0.08 * AU)) / Math.log1p(maxRadius / (0.08 * AU))
     : Math.pow(actualRadius / maxRadius, 0.62)
-  const displayRadius = (global ? 178 : 96) * normalized
+  const displayRadius = (global ? 178 : 72) * normalized
   const multiplier = displayRadius / actualRadius
   // Three.js uses Y as up; the ecliptic X/Y plane becomes the scene X/Z plane.
   return new THREE.Vector3(
@@ -104,6 +121,19 @@ function createGlowTexture(): THREE.CanvasTexture {
   gradient.addColorStop(1, 'rgba(255,130,20,0)')
   context.fillStyle = gradient
   context.fillRect(0, 0, 128, 128)
+  return new THREE.CanvasTexture(canvas)
+}
+
+function createSelectionTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas')
+  canvas.width = 128
+  canvas.height = 128
+  const context = canvas.getContext('2d')!
+  context.strokeStyle = 'rgba(115, 221, 211, .9)'
+  context.lineWidth = 4
+  context.beginPath()
+  context.arc(64, 64, 50, 0, Math.PI * 2)
+  context.stroke()
   return new THREE.CanvasTexture(canvas)
 }
 
@@ -140,6 +170,7 @@ function disposeGroup(group: THREE.Group) {
       const materials = Array.isArray(object.material) ? object.material : [object.material]
       materials.forEach((material) => material.dispose())
     }
+    if (object instanceof THREE.Sprite) object.material.dispose()
   })
   group.clear()
 }
@@ -220,6 +251,23 @@ export function SolarMap({
 
     const scopeGroup = new THREE.Group()
     scene.add(scopeGroup)
+    const textureLoader = new THREE.TextureLoader()
+    const maxAnisotropy = renderer.capabilities.getMaxAnisotropy()
+    const loadedTextures: THREE.Texture[] = []
+    const planetTextures = new Map<string, THREE.Texture>()
+    for (const [bodyId, url] of Object.entries(textureUrls)) {
+      const texture = textureLoader.load(url)
+      texture.colorSpace = THREE.SRGBColorSpace
+      texture.anisotropy = Math.min(maxAnisotropy, 8)
+      planetTextures.set(bodyId, texture)
+      loadedTextures.push(texture)
+    }
+    const saturnRingTexture = textureLoader.load(saturnRingUrl)
+    saturnRingTexture.colorSpace = THREE.SRGBColorSpace
+    saturnRingTexture.anisotropy = Math.min(maxAnisotropy, 8)
+    loadedTextures.push(saturnRingTexture)
+    const selectionTexture = createSelectionTexture()
+    loadedTextures.push(selectionTexture)
     let visuals: BodyVisual[] = []
     let scope: ScopeModel = {
       focus: bodyById.get('sun')!,
@@ -232,7 +280,7 @@ export function SolarMap({
     let cameraTransition = false
 
     const setCameraPreset = (preset: 'perspective' | 'top') => {
-      const distance = scope.global ? 248 : 148
+      const distance = scope.global ? 248 : 220
       cameraGoal = preset === 'top'
         ? new THREE.Vector3(0.01, distance, 0.01)
         : new THREE.Vector3(distance * 0.52, distance * 0.46, distance * 0.78)
@@ -270,7 +318,8 @@ export function SolarMap({
           : 1),
         global ? 70 * AU : 1,
       )
-      scope = { focus, maxRadius, global, bodies: [focus, ...children] }
+      const sun = bodyById.get('sun')!
+      scope = { focus, maxRadius, global, bodies: global ? [focus, ...children] : [sun, focus, ...children] }
 
       children.forEach(buildOrbit)
       const glowTexture = focus.id === 'sun' ? createGlowTexture() : null
@@ -278,8 +327,10 @@ export function SolarMap({
       for (const body of scope.bodies) {
         const isFocus = body.id === focus.id
         const radius = bodyRadius(body, isFocus, global)
+        const surfaceTexture = planetTextures.get(body.id) ?? null
         const material = new THREE.MeshStandardMaterial({
-          color: bodyColor(body),
+          color: surfaceTexture ? 0xffffff : bodyColor(body),
+          map: surfaceTexture,
           roughness: body.body_class === 'star' ? 0.42 : 0.78,
           metalness: body.body_class === 'asteroid' ? 0.18 : 0.03,
           emissive: body.body_class === 'star' ? 0xff8a20 : 0x000000,
@@ -294,9 +345,11 @@ export function SolarMap({
             new THREE.RingGeometry(radius * 1.35, radius * 2.25, 96),
             new THREE.MeshStandardMaterial({
               color: 0xc7b17a,
+              map: saturnRingTexture,
+              alphaMap: saturnRingTexture,
               side: THREE.DoubleSide,
               transparent: true,
-              opacity: 0.62,
+              opacity: 0.82,
               roughness: 0.85,
             }),
           )
@@ -323,9 +376,18 @@ export function SolarMap({
         label.className = 'three-label'
         label.innerHTML = `<b>${body.localized_name_zh}</b><span>${body.canonical_name}</span>`
         const labelObject = new CSS2DObject(label)
-        labelObject.position.set(radius + 1.6, radius + 1.8, 0)
-        mesh.add(labelObject)
-        visuals.push({ body, mesh, material, baseScale: 1, label })
+        scopeGroup.add(labelObject)
+
+        const selectionHalo = new THREE.Sprite(new THREE.SpriteMaterial({
+          map: selectionTexture,
+          color: 0x73ddd3,
+          transparent: true,
+          depthWrite: false,
+        }))
+        selectionHalo.scale.set(radius * 3.1, radius * 3.1, 1)
+        selectionHalo.visible = body.id === selectedRef.current
+        mesh.add(selectionHalo)
+        visuals.push({ body, mesh, material, labelObject, label, selectionHalo })
       }
       setCameraPreset(viewPresetValueRef.current)
     }
@@ -399,13 +461,22 @@ export function SolarMap({
 
       for (const visual of visuals) {
         const relative = relativePosition(visual.body, scope.focus, epochRef.current)
-        visual.mesh.position.copy(displayPosition(relative, scope.maxRadius, scope.global))
+        const nextPosition = !scope.global && visual.body.id === 'sun'
+          ? displayPosition(relative, Math.hypot(...relative), false).normalize().multiplyScalar(76)
+          : displayPosition(relative, scope.maxRadius, scope.global)
+        visual.mesh.position.copy(nextPosition)
+        const radius = visual.mesh.geometry.parameters.radius
+        visual.labelObject.position.set(
+          nextPosition.x + radius + 1.6,
+          nextPosition.y + radius + 1.8,
+          nextPosition.z,
+        )
         if (visual.body.rotation_period_s) {
           visual.mesh.rotation.y = (epochRef.current / 1e6 / visual.body.rotation_period_s * Math.PI * 2) % (Math.PI * 2)
         }
         const selected = visual.body.id === selectedRef.current
-        const pulse = selected ? 1.13 + Math.sin(now * 0.005) * 0.035 : 1
-        visual.mesh.scale.setScalar(THREE.MathUtils.lerp(visual.mesh.scale.x, pulse * visual.baseScale, 0.12))
+        visual.mesh.scale.setScalar(1)
+        visual.selectionHalo.visible = selected
         visual.material.emissive.setHex(
           visual.body.body_class === 'star' ? 0xff8a20 : selected ? 0x1f6d72 : 0x000000,
         )
@@ -452,6 +523,7 @@ export function SolarMap({
         }
       })
       renderer.dispose()
+      loadedTextures.forEach((texture) => texture.dispose())
       renderer.domElement.remove()
       labelRenderer.domElement.remove()
     }
@@ -469,6 +541,10 @@ export function SolarMap({
       <div className="map-caption">
         <span className="status-dot" /> Three.js WebGL · J2000 黄道参考系
         <strong>轨道距离与天体半径均为视觉放大；权威 SI 状态保持不变</strong>
+        <small className="texture-credit">
+          材质 <a href="https://www.solarsystemscope.com/textures/" target="_blank" rel="noreferrer">Solar System Scope / INOVE</a>
+          {' · '}<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a>
+        </small>
       </div>
       <div className="map-help">滚轮缩放 · 左键旋转 · 右键平移 · 双击进入层级</div>
       <div className="fps-meter" aria-label="当前 WebGL 帧率">-- FPS</div>
