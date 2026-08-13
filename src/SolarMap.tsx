@@ -55,6 +55,8 @@ interface BodyVisual {
   root: THREE.Group
   mesh: THREE.Mesh<THREE.SphereGeometry, THREE.MeshStandardMaterial>
   material: THREE.MeshStandardMaterial
+  baseRadius: number
+  glow?: THREE.Sprite
   cloudMesh?: THREE.Mesh<THREE.SphereGeometry, THREE.MeshStandardMaterial>
   nightMesh?: THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMaterial>
   labelObject: CSS2DObject
@@ -92,16 +94,41 @@ const textureUrls: Record<string, string> = {
   venus: new URL('../assets/textures/venus_atmosphere.jpg', import.meta.url).href,
   earth: new URL('../assets/textures/earth_daymap.jpg', import.meta.url).href,
   moon: new URL('../assets/textures/moon.jpg', import.meta.url).href,
+  europa: new URL('../assets/textures/europa.jpg', import.meta.url).href,
+  ganymede: new URL('../assets/textures/ganymede.jpg', import.meta.url).href,
+  callisto: new URL('../assets/textures/callisto.jpg', import.meta.url).href,
   mars: new URL('../assets/textures/mars.jpg', import.meta.url).href,
   jupiter: new URL('../assets/textures/jupiter.jpg', import.meta.url).href,
   saturn: new URL('../assets/textures/saturn.jpg', import.meta.url).href,
   uranus: new URL('../assets/textures/uranus.jpg', import.meta.url).href,
   neptune: new URL('../assets/textures/neptune.jpg', import.meta.url).href,
+  ceres: new URL('../assets/textures/ceres.jpg', import.meta.url).href,
+  pluto: new URL('../assets/textures/pluto.jpg', import.meta.url).href,
+  eris: new URL('../assets/textures/eris.jpg', import.meta.url).href,
+  haumea: new URL('../assets/textures/haumea.jpg', import.meta.url).href,
+  makemake: new URL('../assets/textures/makemake.jpg', import.meta.url).href,
 }
 
 const saturnRingUrl = new URL('../assets/textures/saturn_ring.png', import.meta.url).href
 const earthCloudUrl = new URL('../assets/textures/earth_clouds.jpg', import.meta.url).href
 const earthNightUrl = new URL('../assets/textures/earth_nightmap.jpg', import.meta.url).href
+const starfieldUrl = new URL('../assets/textures/starfield-j2000-4k.jpg', import.meta.url).href
+const LOCAL_SUN_DISPLAY_DISTANCE = 92
+
+function sunAppearance(distanceAu: number, global: boolean) {
+  if (global) {
+    return { radiusScale: 1, glowSize: 30, emissiveIntensity: 3.4, lightIntensity: 9.5 }
+  }
+  const safeDistance = Math.max(distanceAu, 0.2)
+  const apparentScale = THREE.MathUtils.clamp(1 / Math.sqrt(safeDistance), 0.68, 2.25)
+  const irradiance = THREE.MathUtils.clamp(1 / (safeDistance * safeDistance), 0.28, 5)
+  return {
+    radiusScale: apparentScale * 1.35,
+    glowSize: 34 * apparentScale,
+    emissiveIntensity: 3.6 + Math.sqrt(irradiance) * 1.15,
+    lightIntensity: 7.5 * irradiance,
+  }
+}
 
 function relativePosition(body: Body, focus: Body, epochTdbMicros: number): [number, number, number] {
   if (body.id === focus.id) return [0, 0, 0]
@@ -196,31 +223,6 @@ function createNightLightsMaterial(nightMap: THREE.Texture, sunPosition: THREE.V
   })
 }
 
-function createStarField(): THREE.Points {
-  const points: number[] = []
-  let seed = 0x2160
-  const random = () => {
-    seed = (seed * 1664525 + 1013904223) >>> 0
-    return seed / 0xffffffff
-  }
-  for (let index = 0; index < 1_200; index += 1) {
-    const radius = 280 + random() * 360
-    const theta = random() * Math.PI * 2
-    const phi = Math.acos(2 * random() - 1)
-    points.push(
-      radius * Math.sin(phi) * Math.cos(theta),
-      radius * Math.cos(phi),
-      radius * Math.sin(phi) * Math.sin(theta),
-    )
-  }
-  const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3))
-  return new THREE.Points(
-    geometry,
-    new THREE.PointsMaterial({ color: 0xa9c6ca, size: 0.75, transparent: true, opacity: 0.58 }),
-  )
-}
-
 function disposeGroup(group: THREE.Group) {
   group.traverse((object) => {
     if (object instanceof CSS2DObject) object.element.remove()
@@ -306,13 +308,19 @@ export function SolarMap({
     scene.add(new THREE.AmbientLight(0x71808a, 0.22))
     const sunlight = new THREE.PointLight(0xfff1d1, 9.5, 0, 0)
     scene.add(sunlight)
-    scene.add(createStarField())
 
     const scopeGroup = new THREE.Group()
     scene.add(scopeGroup)
     const textureLoader = new THREE.TextureLoader()
     const maxAnisotropy = renderer.capabilities.getMaxAnisotropy()
     const loadedTextures: THREE.Texture[] = []
+    const starfieldTexture = textureLoader.load(starfieldUrl)
+    starfieldTexture.colorSpace = THREE.SRGBColorSpace
+    starfieldTexture.mapping = THREE.EquirectangularReflectionMapping
+    starfieldTexture.anisotropy = Math.min(maxAnisotropy, 8)
+    scene.background = starfieldTexture
+    scene.backgroundIntensity = 0.68
+    loadedTextures.push(starfieldTexture)
     const planetTextures = new Map<string, THREE.Texture>()
     for (const [bodyId, url] of Object.entries(textureUrls)) {
       const texture = textureLoader.load(url)
@@ -382,14 +390,21 @@ export function SolarMap({
       const focus = bodyById.get(nextFocusId) ?? bodyById.get('sun')!
       const children = childrenOf(focus.id)
       const global = focus.id === 'sun'
+      const focusOrbitRadius = focus.body_class === 'moon' && focus.ephemeris
+        ? focus.ephemeris.semi_major_axis_m * (1 + focus.ephemeris.eccentricity)
+        : 1
       const maxRadius = Math.max(
         ...children.map((body) => body.ephemeris
           ? body.ephemeris.semi_major_axis_m * (1 + body.ephemeris.eccentricity)
           : 1),
-        global ? 70 * AU : 1,
+        global ? 70 * AU : focusOrbitRadius,
       )
       const sun = bodyById.get('sun')!
-      scope = { focus, maxRadius, global, bodies: global ? [focus, ...children] : [sun, focus, ...children] }
+      const parent = focus.parent_id ? bodyById.get(focus.parent_id) : undefined
+      const localBodies = [sun, parent, focus, ...children]
+        .filter((body): body is Body => Boolean(body))
+        .filter((body, index, bodies) => bodies.findIndex((candidate) => candidate.id === body.id) === index)
+      scope = { focus, maxRadius, global, bodies: global ? [focus, ...children] : localBodies }
 
       children.forEach(buildOrbit)
 
@@ -402,8 +417,9 @@ export function SolarMap({
           map: surfaceTexture,
           roughness: body.body_class === 'star' ? 0.42 : 0.78,
           metalness: body.body_class === 'asteroid' ? 0.18 : 0.03,
-          emissive: body.body_class === 'star' ? 0xff8a20 : 0x000000,
-          emissiveIntensity: body.body_class === 'star' ? 2.15 : 0,
+          emissive: body.body_class === 'star' ? 0xffffff : 0x000000,
+          emissiveMap: body.body_class === 'star' ? surfaceTexture : null,
+          emissiveIntensity: body.body_class === 'star' ? 3.4 : 0,
         })
         const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, 40, 28), material)
         mesh.userData.bodyId = body.id
@@ -454,16 +470,20 @@ export function SolarMap({
           axisGroup.add(ring)
         }
 
+        let glow: THREE.Sprite | undefined
         if (body.id === 'sun') {
-          const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+          glow = new THREE.Sprite(new THREE.SpriteMaterial({
             map: glowTexture,
             color: 0xffb044,
             transparent: true,
             depthWrite: false,
             blending: THREE.AdditiveBlending,
           }))
-          const glowSize = global ? 30 : 22
-          glow.scale.set(glowSize, glowSize, 1)
+          const appearance = sunAppearance(
+            Math.hypot(...relativePosition(sun, focus, epochRef.current)) / AU,
+            global,
+          )
+          glow.scale.set(appearance.glowSize, appearance.glowSize, 1)
           root.add(glow)
         }
 
@@ -482,7 +502,19 @@ export function SolarMap({
         selectionHalo.scale.set(radius * 3.1, radius * 3.1, 1)
         selectionHalo.visible = body.id === selectedRef.current
         root.add(selectionHalo)
-        visuals.push({ body, root, mesh, material, cloudMesh, nightMesh, labelObject, label, selectionHalo })
+        visuals.push({
+          body,
+          root,
+          mesh,
+          material,
+          baseRadius: radius,
+          glow,
+          cloudMesh,
+          nightMesh,
+          labelObject,
+          label,
+          selectionHalo,
+        })
       }
       setCameraPreset(viewPresetValueRef.current)
     }
@@ -557,13 +589,19 @@ export function SolarMap({
       for (const visual of visuals) {
         const relative = relativePosition(visual.body, scope.focus, epochRef.current)
         const nextPosition = !scope.global && visual.body.id === 'sun'
-          ? displayPosition(relative, Math.hypot(...relative), false).normalize().multiplyScalar(900)
+          ? displayPosition(relative, Math.hypot(...relative), false).normalize().multiplyScalar(LOCAL_SUN_DISPLAY_DISTANCE)
           : displayPosition(relative, scope.maxRadius, scope.global)
         visual.root.position.copy(nextPosition)
         visual.labelObject.position.copy(nextPosition)
         if (visual.body.id === 'sun') {
           sunWorldPosition.copy(nextPosition)
           sunlight.position.copy(nextPosition)
+          const appearance = sunAppearance(Math.hypot(...relative) / AU, scope.global)
+          visual.mesh.scale.setScalar(appearance.radiusScale)
+          visual.material.emissiveIntensity = appearance.emissiveIntensity
+          sunlight.intensity = appearance.lightIntensity
+          visual.glow?.scale.set(appearance.glowSize, appearance.glowSize, 1)
+          visual.selectionHalo.scale.setScalar(visual.baseRadius * appearance.radiusScale * 3.1)
         }
         if (visual.body.rotation_period_s) {
           const rotation = (epochRef.current / 1e6 / visual.body.rotation_period_s * Math.PI * 2) % (Math.PI * 2)
@@ -576,10 +614,9 @@ export function SolarMap({
           }
         }
         const selected = visual.body.id === selectedRef.current
-        visual.mesh.scale.setScalar(1)
+        if (visual.body.id !== 'sun') visual.mesh.scale.setScalar(1)
         visual.selectionHalo.visible = selected
-        visual.material.emissive.setHex(visual.body.body_class === 'star' ? 0xff8a20 : 0x000000)
-        visual.material.emissiveIntensity = visual.body.body_class === 'star' ? 2.15 : 0
+        visual.material.emissive.setHex(visual.body.body_class === 'star' ? 0xffffff : 0x000000)
         visual.label.classList.toggle('selected', selected)
         visual.label.classList.toggle('minor', scope.global
           && visual.body.body_class !== 'planet'
@@ -615,12 +652,6 @@ export function SolarMap({
       renderer.domElement.removeEventListener('dblclick', handleDoubleClick)
       controls.dispose()
       disposeGroup(scopeGroup)
-      scene.traverse((object) => {
-        if (object instanceof THREE.Points) {
-          object.geometry.dispose()
-          object.material.dispose()
-        }
-      })
       renderer.dispose()
       loadedTextures.forEach((texture) => texture.dispose())
       renderer.domElement.remove()
@@ -641,11 +672,11 @@ export function SolarMap({
         <span className="status-dot" /> Three.js WebGL · J2000 黄道参考系
         <strong>轨道距离与天体半径均为视觉放大；权威 SI 状态保持不变</strong>
         <small className="texture-credit">
-          材质 <a href="https://www.solarsystemscope.com/textures/" target="_blank" rel="noreferrer">Solar System Scope / INOVE</a>
-          {' · '}<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a>
+          表面 <a href="https://www.solarsystemscope.com/textures/" target="_blank" rel="noreferrer">Solar System Scope / INOVE</a>
+          {' · '}星空 <a href="https://svs.gsfc.nasa.gov/4851" target="_blank" rel="noreferrer">NASA SVS / J2000</a>
         </small>
       </div>
-      <div className="map-help">滚轮缩放 · 左键旋转 · 右键平移 · 双击进入层级</div>
+      <div className="map-help">滚轮缩放 · 左键旋转 · 右键平移 · 双击聚焦天体</div>
       {focusId !== 'sun' && (
         <div className="sun-distance-badge">☀ 太阳 · 远场光源 · {solarDistanceAu.toFixed(3)} AU</div>
       )}

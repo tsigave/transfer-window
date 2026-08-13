@@ -18,7 +18,7 @@ function shiftCalendarYears(epochTdbMicros: number, years: number): number {
 }
 
 function scopeForBody(body: Body): string {
-  return body.body_class === 'moon' ? body.parent_id ?? 'sun' : body.id
+  return body.id
 }
 
 function TreeBranch({ body, selectedId, onSelect }: { body: Body; selectedId: string; onSelect: (id: string) => void }) {
@@ -174,9 +174,9 @@ export default function App() {
         <div className="map-toolbar">
           <div className="toolbar-group scope-tools">
             <button className={focusId === 'sun' ? 'active' : ''} onClick={() => setFocusId('sun')}>太阳系</button>
-            <button onClick={() => focusBody(selected.id)}>◎ 聚焦所选层级</button>
+            <button onClick={() => focusBody(selected.id)}>◎ 聚焦所选天体</button>
             <button onClick={goUpOneLevel} disabled={focusId === 'sun'}>↰ 上一级</button>
-            <span className="scope-readout">当前：{bodyById.get(focusId)?.localized_name_zh ?? '太阳'}系</span>
+            <span className="scope-readout">当前：{bodyById.get(focusId)?.localized_name_zh ?? '太阳'}视图</span>
           </div>
           <div className="toolbar-group camera-tools">
             <button className={viewPreset === 'perspective' ? 'active' : ''} onClick={() => setViewPreset('perspective')}>3D 透视</button>
