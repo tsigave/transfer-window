@@ -80,7 +80,7 @@ interface OrbitVisual {
   flowGeometry: THREE.BufferGeometry
   flowCurve: THREE.CatmullRomCurve3
   flowTrailLength: number
-  phaseLead: number
+  phaseGap: number
   anchorBodyId?: string
 }
 
@@ -557,10 +557,10 @@ export function SolarMap({
         0.00004,
         scope.global ? 0.018 : 0.03,
       )
-      const phaseLead = THREE.MathUtils.clamp(
-        scope.focusRadiusScene * (isFocusedOrbit ? 4 : 2.5) / Math.max(orbitLength, 0.0001),
+      const phaseGap = THREE.MathUtils.clamp(
+        scope.focusRadiusScene * (isFocusedOrbit ? 0.8 : 0.5) / Math.max(orbitLength, 0.0001),
         0.00002,
-        scope.global ? 0.008 : 0.015,
+        scope.global ? 0.002 : 0.004,
       )
       scopeGroup.add(orbitRoot)
       orbitVisuals.push({
@@ -569,7 +569,7 @@ export function SolarMap({
         flowGeometry,
         flowCurve,
         flowTrailLength,
-        phaseLead,
+        phaseGap,
         anchorBodyId,
       })
     }
@@ -838,8 +838,10 @@ export function SolarMap({
           const lastPoint = Math.max(positions.count - 1, 1)
           for (let index = 0; index < positions.count; index += 1) {
             const progress = index / lastPoint
+            // Every sample stays behind the body's current orbital phase; the
+            // small gap keeps the bright head visible without leading it.
             const samplePhase = (
-              phase + orbit.phaseLead - orbit.flowTrailLength * (1 - progress) + 1
+              phase - orbit.phaseGap - orbit.flowTrailLength * (1 - progress) + 1
             ) % 1
             const point = orbit.flowCurve.getPoint(samplePhase)
             positions.setXYZ(index, point.x, point.y, point.z)
