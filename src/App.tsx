@@ -10,6 +10,19 @@ const AU = 149_597_870_700
 const yearMicros = 365.25 * 86_400 * 1e6
 const formatNumber = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 3 })
 const playbackRates = [1, 10_000, 1_000_000, 100_000_000]
+const planetScaleStorageKey = 'solarstorm.planet-visibility-scale'
+
+function initialPlanetScale(): number {
+  if (typeof window === 'undefined') return 1.8
+  try {
+    const rawValue = window.localStorage.getItem(planetScaleStorageKey)
+    if (rawValue === null) return 1.8
+    const stored = Number(rawValue)
+    return Number.isFinite(stored) ? Math.min(6, Math.max(1, stored)) : 1.8
+  } catch {
+    return 1.8
+  }
+}
 
 function shiftCalendarYears(epochTdbMicros: number, years: number): number {
   const date = dateFromEpoch(epochTdbMicros)
@@ -42,6 +55,7 @@ export default function App() {
   const [epochTdbMicros, setEpochTdbMicros] = useState(() => epochFromDate(initialDate))
   const [timeRate, setTimeRate] = useState(0)
   const [viewPreset, setViewPreset] = useState<'perspective' | 'top'>('perspective')
+  const [planetVisibilityScale, setPlanetVisibilityScale] = useState(initialPlanetScale)
   const [cameraAction, setCameraAction] = useState<CameraAction>({ id: 0, type: 'reset' })
   const [notice, setNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -51,6 +65,14 @@ export default function App() {
   const [pausedState, setPausedState] = useState(previewState)
   const state = timeRate === 0 ? pausedState : previewState
   const displayedDate = dateFromEpoch(epochTdbMicros)
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(planetScaleStorageKey, String(planetVisibilityScale))
+    } catch {
+      // The setting still works for this session when storage is unavailable.
+    }
+  }, [planetVisibilityScale])
 
   useEffect(() => {
     if (timeRate !== 0) return
@@ -186,6 +208,19 @@ export default function App() {
             <button aria-label="复位相机" title="复位相机" onClick={() => moveCamera('reset')}>↺</button>
           </div>
         </div>
+        <label className="planet-scale-control" title="1× 保持真实比例；提高倍率可让太阳系总览中的行星更容易辨认">
+          <span>行星可见性</span>
+          <input
+            aria-label="太阳系总览行星视觉倍率"
+            type="range"
+            min={1}
+            max={6}
+            step={0.1}
+            value={planetVisibilityScale}
+            onChange={(event) => setPlanetVisibilityScale(Number(event.target.value))}
+          />
+          <output>{planetVisibilityScale === 1 ? '拟真 1×' : `${planetVisibilityScale.toFixed(1)}×`}</output>
+        </label>
         <SolarMap
           epochTdbMicros={epochTdbMicros}
           timeRate={timeRate}
@@ -193,6 +228,7 @@ export default function App() {
           focusId={focusId}
           viewPreset={viewPreset}
           cameraAction={cameraAction}
+          overviewBodyScaleCap={planetVisibilityScale}
           onSelect={setSelectedId}
           onFocus={focusBody}
         />

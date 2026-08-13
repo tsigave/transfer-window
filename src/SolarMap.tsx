@@ -46,6 +46,7 @@ interface Props {
   focusId: string
   viewPreset: 'perspective' | 'top'
   cameraAction: CameraAction
+  overviewBodyScaleCap: number
   onSelect: (id: string) => void
   onFocus: (id: string) => void
 }
@@ -92,15 +93,13 @@ function bodyColor(body: Body): number {
   return 0x7283ad
 }
 
-function bodyRadius(body: Body, isFocus: boolean, isOverview: boolean): number {
-  if (isFocus && !isOverview) return body.body_class === 'star' ? 7 : 5.5
-  if (body.body_class === 'star') return isOverview ? 0.45 : 4.5
+function bodyRadius(body: Body, isFocus: boolean): number {
+  if (isFocus) return body.body_class === 'star' ? 7 : 5.5
+  if (body.body_class === 'star') return 4.5
   const physicalHint = Math.log10(Math.max(body.mean_radius_m, 1)) - 3.7
-  if (body.body_class === 'planet') {
-    return isOverview ? THREE.MathUtils.clamp(physicalHint * 0.14, 0.24, 0.68) : THREE.MathUtils.clamp(physicalHint, 1.8, 3.6)
-  }
-  if (body.body_class === 'dwarf_planet') return isOverview ? 0.24 : 1.7
-  return isOverview ? 0.16 : 1.35
+  if (body.body_class === 'planet') return THREE.MathUtils.clamp(physicalHint, 1.8, 3.6)
+  if (body.body_class === 'dwarf_planet') return 1.7
+  return 1.35
 }
 
 function createRadialRingGeometry(innerRadius: number, outerRadius: number, segments = 128) {
@@ -159,7 +158,7 @@ const FOCUS_CAMERA_RADII = 16
 const LOCAL_SUN_GLOW_MULTIPLIER = 5.2
 const VISUAL_FOCUS_OFFSET_RADII = 3.6
 const SOLAR_OVERVIEW_FRACTION = 0.72
-const OVERVIEW_BODY_SCALE_CAP = 1.8
+const OVERVIEW_BODY_SCALE_EXPONENT = 0.72
 const SATELLITE_LABEL_MIN_SCREEN_WIDTH = 0.05
 
 function sunAppearance(distanceAu: number, overview: boolean) {
@@ -327,6 +326,7 @@ export function SolarMap({
   focusId,
   viewPreset,
   cameraAction,
+  overviewBodyScaleCap,
   onSelect,
   onFocus,
 }: Props) {
@@ -339,6 +339,7 @@ export function SolarMap({
   const timeRateRef = useRef(timeRate)
   const selectedRef = useRef(selectedId)
   const viewPresetValueRef = useRef(viewPreset)
+  const overviewBodyScaleCapRef = useRef(overviewBodyScaleCap)
   const onSelectRef = useRef(onSelect)
   const onFocusRef = useRef(onFocus)
   const rebuildRef = useRef<(focus: string) => void>(() => undefined)
@@ -348,6 +349,7 @@ export function SolarMap({
   useEffect(() => { epochRef.current = epochTdbMicros }, [epochTdbMicros])
   useEffect(() => { timeRateRef.current = timeRate }, [timeRate])
   useEffect(() => { selectedRef.current = selectedId }, [selectedId])
+  useEffect(() => { overviewBodyScaleCapRef.current = overviewBodyScaleCap }, [overviewBodyScaleCap])
   useEffect(() => { onSelectRef.current = onSelect }, [onSelect])
   useEffect(() => { onFocusRef.current = onFocus }, [onFocus])
   useEffect(() => { rebuildRef.current(focusId) }, [focusId])
@@ -488,11 +490,17 @@ export function SolarMap({
 
     const isSolarOverview = () => camera.position.distanceTo(controls.target) >= overviewDistance()
 
-    const overviewProgress = () => THREE.MathUtils.smoothstep(
-      camera.position.distanceTo(controls.target),
-      overviewDistance() * 0.8,
-      overviewDistance() * 1.25,
-    )
+    const overviewBodyScale = () => {
+      const zoomDistance = camera.position.distanceTo(controls.target)
+      const compensationStart = overviewDistance() * 0.8
+      const zoomRatio = Math.max(1, zoomDistance / compensationStart)
+      // The exponent stays below 1: after the threshold, bodies still get
+      // smaller on screen while zooming out, just more slowly than the system.
+      return Math.min(
+        overviewBodyScaleCapRef.current,
+        Math.pow(zoomRatio, OVERVIEW_BODY_SCALE_EXPONENT),
+      )
+    }
 
     const isBodyVisible = (body: Body, overview = isSolarOverview()) => !(
       overview && body.body_class === 'moon' && body.id !== 'moon'
@@ -670,7 +678,7 @@ export function SolarMap({
 
       for (const body of scope.bodies) {
         const isFocus = body.id === focus.id
-        const radius = bodyRadius(body, isFocus, false)
+        const radius = bodyRadius(body, isFocus)
         const surfaceTexture = planetTextures.get(body.id) ?? null
         const material = new THREE.MeshStandardMaterial({
           color: surfaceTexture ? 0xffffff : bodyColor(body),
@@ -925,7 +933,7 @@ export function SolarMap({
 
       const frameOffset = visualFocusOffset()
       const overview = isSolarOverview()
-      const overviewBlend = overviewProgress()
+      const bodyScaleCompensation = overviewBodyScale()
       for (const orbit of orbitVisuals) {
         const visible = isBodyVisible(orbit.body, overview)
         orbit.root.visible = visible
@@ -993,23 +1001,11 @@ export function SolarMap({
         visual.root.position.copy(nextPosition)
         visual.labelObject.position.copy(nextPosition)
         const physicalRadius = visual.body.mean_radius_m * UNIFIED_SCALE
-        const overviewRadiusCap = visual.body.body_class === 'star'
-          ? 0.65
-          : visual.body.body_class === 'planet' ? 0.5
-            : visual.body.body_class === 'moon' ? 0.3 : 0.32
-        const overviewRadius = Math.min(
-          bodyRadius(visual.body, false, true) * OVERVIEW_BODY_SCALE_CAP,
-          overviewRadiusCap,
-        )
         const canEnlargeInOverview = visual.body.body_class === 'planet'
           || visual.body.body_class === 'dwarf_planet'
-        const renderedRadius = canEnlargeInOverview
-          ? THREE.MathUtils.lerp(
-            physicalRadius,
-            Math.max(physicalRadius, overviewRadius),
-            overviewBlend,
-          )
-          : physicalRadius
+        const renderedRadius = physicalRadius * (
+          canEnlargeInOverview ? bodyScaleCompensation : 1
+        )
         const radiusScale = renderedRadius / visual.baseRadius
         visual.axisGroup.scale.setScalar(radiusScale)
         if (visual.body.id === 'sun') {
