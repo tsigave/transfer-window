@@ -23,4 +23,8 @@ button { color: inherit; cursor: pointer; }
 @media (max-width: 1250px) { .app-shell { grid-template-columns: 255px minmax(510px,1fr) 315px; }.topbar { grid-template-columns: 255px 1fr 315px; }.detail-panel { padding: 22px 18px; } }
 .texture-credit { display: block; margin-top: 4px; color: #526668; pointer-events: auto; }.texture-credit a { color: #688f8d; text-decoration: none; }.texture-credit a:hover { color: var(--teal); }
 .three-label { margin: -10px 0 0 12px; transition: opacity .2s ease, color .2s ease; }.three-label.minor, .three-label.selected { transform: none; }
+.three-label.selected { color: #f2c873; text-shadow: 0 1px 5px #000, 0 0 10px #000, 0 0 8px rgba(242,200,115,.28); }
+.three-label.selected b { font-weight: 700; }
+.three-label.selected span { color: #c9a45f; font-weight: 500; }
+.three-label.selected::before { background: #e4b65f; box-shadow: 0 0 6px rgba(228,182,95,.7); }
 .sun-distance-badge { position: absolute; z-index: 3; left: 18px; top: 58px; color: #bca15f; background: rgba(5,14,17,.68); border: 1px solid rgba(188,161,95,.18); padding: 4px 7px; font: 8px 'IBM Plex Mono'; pointer-events: none; }

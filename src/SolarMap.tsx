@@ -62,7 +62,6 @@ interface BodyVisual {
   nightMesh?: THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMaterial>
   labelObject: CSS2DObject
   label: HTMLDivElement
-  selectionHalo: THREE.Sprite
 }
 
 interface ScopeModel {
@@ -99,6 +98,30 @@ function bodyRadius(body: Body, isFocus: boolean, isGlobal: boolean): number {
   if (body.body_class === 'planet') return THREE.MathUtils.clamp(physicalHint, 1.8, 3.6)
   if (body.body_class === 'dwarf_planet') return isGlobal ? 1.2 : 1.7
   return isGlobal ? 0.85 : 1.35
+}
+
+function createRadialRingGeometry(innerRadius: number, outerRadius: number, segments = 128) {
+  const geometry = new THREE.RingGeometry(innerRadius, outerRadius, segments)
+  const positions = geometry.getAttribute('position')
+  const uv = geometry.getAttribute('uv')
+  const radialSpan = outerRadius - innerRadius
+
+  // Planetary ring textures are horizontal strips: sample them from the
+  // inner edge to the outer edge instead of wrapping them around the disc.
+  for (let index = 0; index < positions.count; index += 1) {
+    const radius = Math.hypot(positions.getX(index), positions.getY(index))
+    uv.setXY(index, THREE.MathUtils.clamp((radius - innerRadius) / radialSpan, 0, 1), 0.5)
+  }
+  uv.needsUpdate = true
+  return geometry
+}
+
+function createRingLineGeometry(radius: number, segments = 192) {
+  const points = Array.from({ length: segments }, (_, index) => {
+    const angle = index / segments * Math.PI * 2
+    return new THREE.Vector3(Math.cos(angle) * radius, Math.sin(angle) * radius, 0)
+  })
+  return new THREE.BufferGeometry().setFromPoints(points)
 }
 
 const textureUrls: Record<string, string> = {
@@ -184,19 +207,6 @@ function createGlowTexture(): THREE.CanvasTexture {
   gradient.addColorStop(1, 'rgba(255,130,20,0)')
   context.fillStyle = gradient
   context.fillRect(0, 0, 128, 128)
-  return new THREE.CanvasTexture(canvas)
-}
-
-function createSelectionTexture(): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas')
-  canvas.width = 128
-  canvas.height = 128
-  const context = canvas.getContext('2d')!
-  context.strokeStyle = 'rgba(115, 221, 211, .9)'
-  context.lineWidth = 4
-  context.beginPath()
-  context.arc(64, 64, 50, 0, Math.PI * 2)
-  context.stroke()
   return new THREE.CanvasTexture(canvas)
 }
 
@@ -404,8 +414,6 @@ export function SolarMap({
     loadedTextures.push(earthNightTexture)
     const glowTexture = createGlowTexture()
     loadedTextures.push(glowTexture)
-    const selectionTexture = createSelectionTexture()
-    loadedTextures.push(selectionTexture)
     const sunWorldPosition = new THREE.Vector3()
     const cloudPhase = Math.random() * Math.PI * 2
     let visuals: BodyVisual[] = []
@@ -684,19 +692,65 @@ export function SolarMap({
 
         if (body.id === 'saturn') {
           const ring = new THREE.Mesh(
-            new THREE.RingGeometry(radius * 1.35, radius * 2.25, 96),
-            new THREE.MeshStandardMaterial({
-              color: 0xc7b17a,
+            createRadialRingGeometry(radius * 1.28, radius * 2.35),
+            new THREE.MeshBasicMaterial({
+              color: 0xffe4ad,
               map: saturnRingTexture,
-              alphaMap: saturnRingTexture,
               side: THREE.DoubleSide,
               transparent: true,
-              opacity: 0.82,
-              roughness: 0.85,
+              opacity: 1,
+              alphaTest: 0.015,
+              depthWrite: false,
+              toneMapped: false,
             }),
           )
           ring.rotation.x = Math.PI / 2
+          ring.renderOrder = 1
+          ring.userData.bodyId = body.id
           axisGroup.add(ring)
+        }
+
+        if (body.id === 'uranus') {
+          const ringGroup = new THREE.Group()
+          const dustyDisc = new THREE.Mesh(
+            createRadialRingGeometry(radius * 1.42, radius * 2.08),
+            new THREE.MeshBasicMaterial({
+              color: 0x789b9f,
+              side: THREE.DoubleSide,
+              transparent: true,
+              opacity: 0.12,
+              depthWrite: false,
+              toneMapped: false,
+            }),
+          )
+          dustyDisc.userData.bodyId = body.id
+          ringGroup.add(dustyDisc)
+
+          const uranusBands = [
+            { distance: 1.48, opacity: 0.65 },
+            { distance: 1.57, opacity: 0.5 },
+            { distance: 1.67, opacity: 0.75 },
+            { distance: 1.82, opacity: 0.6 },
+            { distance: 1.98, opacity: 1 },
+          ]
+          for (const band of uranusBands) {
+            const material = new THREE.LineBasicMaterial({
+              color: 0x9bcfd2,
+              transparent: true,
+              opacity: band.opacity,
+              depthWrite: false,
+              toneMapped: false,
+            })
+            const bandMesh = new THREE.LineLoop(
+              createRingLineGeometry(radius * band.distance),
+              material,
+            )
+            bandMesh.userData.bodyId = body.id
+            ringGroup.add(bandMesh)
+          }
+          ringGroup.rotation.x = Math.PI / 2
+          ringGroup.renderOrder = 1
+          axisGroup.add(ringGroup)
         }
 
         let glow: THREE.Sprite | undefined
@@ -722,15 +776,6 @@ export function SolarMap({
         const labelObject = new CSS2DObject(label)
         scopeGroup.add(labelObject)
 
-        const selectionHalo = new THREE.Sprite(new THREE.SpriteMaterial({
-          map: selectionTexture,
-          color: 0x73ddd3,
-          transparent: true,
-          depthWrite: false,
-        }))
-        selectionHalo.scale.set(radius * 3.1, radius * 3.1, 1)
-        selectionHalo.visible = body.id === selectedRef.current
-        root.add(selectionHalo)
         visuals.push({
           body,
           root,
@@ -743,7 +788,6 @@ export function SolarMap({
           nightMesh,
           labelObject,
           label,
-          selectionHalo,
         })
       }
       setCameraPreset(viewPresetValueRef.current)
@@ -861,8 +905,6 @@ export function SolarMap({
           : physicalRadius
         const radiusScale = scope.global ? 1 : renderedRadius / visual.baseRadius
         visual.axisGroup.scale.setScalar(radiusScale)
-        const haloRadius = (scope.global ? visual.baseRadius : renderedRadius) * 3.1
-        visual.selectionHalo.scale.set(haloRadius, haloRadius, 1)
         if (visual.body.id === 'sun') {
           sunWorldPosition.copy(nextPosition)
           sunlight.position.copy(nextPosition)
@@ -885,7 +927,6 @@ export function SolarMap({
           }
         }
         const selected = visual.body.id === selectedRef.current
-        visual.selectionHalo.visible = selected
         visual.material.emissive.setHex(visual.body.body_class === 'star' ? 0xffffff : 0x000000)
         visual.label.classList.toggle('selected', selected)
         visual.label.classList.toggle('minor', scope.global
