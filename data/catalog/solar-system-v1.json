@@ -1,0 +1,311 @@
+{
+  "schema_version": 1,
+  "content_version": "solar-system-2026.08.1",
+  "epoch": "J2000 TDB",
+  "bodies": [
+    {
+      "id": "sun", "canonical_name": "Sun", "localized_name_zh": "太阳", "aliases": ["Sol"],
+      "parent_id": null, "body_class": "star", "mass_kg": 1.9885e30, "mean_radius_m": 6.957e8,
+      "rotation_period_s": 2192832, "ephemeris": null,
+      "ephemeris_source": { "name": "NASA/JPL Solar System Dynamics", "url": "https://ssd.jpl.nasa.gov/", "kind": "public_reference" },
+      "data_quality": "reference", "discovery_status": "observed", "development_status": "observed"
+    },
+    {
+      "id": "mercury", "canonical_name": "Mercury", "localized_name_zh": "水星", "aliases": [],
+      "parent_id": "sun", "body_class": "planet", "mass_kg": 3.3011e23, "mean_radius_m": 2439700, "rotation_period_s": 5067030,
+      "ephemeris": { "semi_major_axis_m": 5.7909e10, "eccentricity": 0.20563, "inclination_deg": 7.005, "longitude_ascending_node_deg": 48.331, "argument_periapsis_deg": 29.124, "mean_anomaly_at_epoch_deg": 174.796, "orbital_period_s": 7600521.6, "epoch_tdb_micros": 0 },
+      "ephemeris_source": { "name": "NASA/JPL Planetary Parameters", "url": "https://ssd.jpl.nasa.gov/planets/phys_par.html", "kind": "public_reference" },
+      "data_quality": "reference", "discovery_status": "observed", "development_status": "observed"
+    },
+    {
+      "id": "venus", "canonical_name": "Venus", "localized_name_zh": "金星", "aliases": [],
+      "parent_id": "sun", "body_class": "planet", "mass_kg": 4.8675e24, "mean_radius_m": 6051800, "rotation_period_s": 20996760,
+      "ephemeris": { "semi_major_axis_m": 1.08210e11, "eccentricity": 0.006772, "inclination_deg": 3.3946, "longitude_ascending_node_deg": 76.680, "argument_periapsis_deg": 54.884, "mean_anomaly_at_epoch_deg": 50.115, "orbital_period_s": 19414149, "epoch_tdb_micros": 0 },
+      "ephemeris_source": { "name": "NASA/JPL Planetary Parameters", "url": "https://ssd.jpl.nasa.gov/planets/phys_par.html", "kind": "public_reference" },
+      "data_quality": "reference", "discovery_status": "observed", "development_status": "observed"
+    },
+    {
+      "id": "earth", "canonical_name": "Earth", "localized_name_zh": "地球", "aliases": ["Terra"],
+      "parent_id": "sun", "body_class": "planet", "mass_kg": 5.97237e24, "mean_radius_m": 6371008.4, "rotation_period_s": 86164.1,
+      "ephemeris": { "semi_major_axis_m": 1.495978707e11, "eccentricity": 0.0167086, "inclination_deg": 0.00005, "longitude_ascending_node_deg": 348.73936, "argument_periapsis_deg": 114.20783, "mean_anomaly_at_epoch_deg": 357.51716, "orbital_period_s": 31558149.8, "epoch_tdb_micros": 0 },
+      "ephemeris_source": { "name": "NASA/JPL DE reference approximation", "url": "https://ssd.jpl.nasa.gov/planets/approx_pos.html", "kind": "public_reference" },
+      "data_quality": "reference", "discovery_status": "observed", "development_status": "observed"
+    },
+    {
+      "id": "mars", "canonical_name": "Mars", "localized_name_zh": "火星", "aliases": [],
+      "parent_id": "sun", "body_class": "planet", "mass_kg": 6.4171e23, "mean_radius_m": 3389500, "rotation_period_s": 88642.7,
+      "ephemeris": { "semi_major_axis_m": 2.27939e11, "eccentricity": 0.0934, "inclination_deg": 1.850, "longitude_ascending_node_deg": 49.558, "argument_periapsis_deg": 286.502, "mean_anomaly_at_epoch_deg": 19.373, "orbital_period_s": 59355072, "epoch_tdb_micros": 0 },
+      "ephemeris_source": { "name": "NASA/JPL Planetary Parameters", "url": "https://ssd.jpl.nasa.gov/planets/phys_par.html", "kind": "public_reference" },
+      "data_quality": "reference", "discovery_status": "observed", "development_status": "observed"
+    },
+    {
+      "id": "jupiter", "canonical_name": "Jupiter", "localized_name_zh": "木星", "aliases": [],
+      "parent_id": "sun", "body_class": "planet", "mass_kg": 1.8982e27, "mean_radius_m": 69911000, "rotation_period_s": 35729.7,
+      "ephemeris": { "semi_major_axis_m": 7.7857e11, "eccentricity": 0.0489, "inclination_deg": 1.303, "longitude_ascending_node_deg": 100.464, "argument_periapsis_deg": 273.867, "mean_anomaly_at_epoch_deg": 20.020, "orbital_period_s": 374335776, "epoch_tdb_micros": 0 },
+      "ephemeris_source": { "name": "NASA/JPL Planetary Parameters", "url": "https://ssd.jpl.nasa.gov/planets/phys_par.html", "kind": "public_reference" },
+      "data_quality": "reference", "discovery_status": "observed", "development_status": "observed"
+    },
+    {
+      "id": "saturn", "canonical_name": "Saturn", "localized_name_zh": "土星", "aliases": [],
+      "parent_id": "sun", "body_class": "planet", "mass_kg": 5.6834e26, "mean_radius_m": 58232000, "rotation_period_s": 38362,
+      "ephemeris": { "semi_major_axis_m": 1.43353e12, "eccentricity": 0.0565, "inclination_deg": 2.485, "longitude_ascending_node_deg": 113.665, "argument_periapsis_deg": 339.392, "mean_anomaly_at_epoch_deg": 317.020, "orbital_period_s": 929596608, "epoch_tdb_micros": 0 },
+      "ephemeris_source": { "name": "NASA/JPL Planetary Parameters", "url": "https://ssd.jpl.nasa.gov/planets/phys_par.html", "kind": "public_reference" },
+      "data_quality": "reference", "discovery_status": "observed", "development_status": "observed"
+    },
+    {
+      "id": "uranus", "canonical_name": "Uranus", "localized_name_zh": "天王星", "aliases": [],
+      "parent_id": "sun", "body_class": "planet", "mass_kg": 8.6810e25, "mean_radius_m": 25362000, "rotation_period_s": 62064,
+      "ephemeris": { "semi_major_axis_m": 2.87246e12, "eccentricity": 0.04717, "inclination_deg": 0.773, "longitude_ascending_node_deg": 74.006, "argument_periapsis_deg": 96.998857, "mean_anomaly_at_epoch_deg": 142.2386, "orbital_period_s": 2651370016, "epoch_tdb_micros": 0 },
+      "ephemeris_source": { "name": "NASA/JPL Planetary Parameters", "url": "https://ssd.jpl.nasa.gov/planets/phys_par.html", "kind": "public_reference" },
+      "data_quality": "reference", "discovery_status": "observed", "development_status": "observed"
+    },
+    {
+      "id": "neptune", "canonical_name": "Neptune", "localized_name_zh": "海王星", "aliases": [],
+      "parent_id": "sun", "body_class": "planet", "mass_kg": 1.02413e26, "mean_radius_m": 24622000, "rotation_period_s": 57996,
+      "ephemeris": { "semi_major_axis_m": 4.49506e12, "eccentricity": 0.008678, "inclination_deg": 1.770, "longitude_ascending_node_deg": 131.784, "argument_periapsis_deg": 273.187, "mean_anomaly_at_epoch_deg": 256.228, "orbital_period_s": 5200418560, "epoch_tdb_micros": 0 },
+      "ephemeris_source": { "name": "NASA/JPL Planetary Parameters", "url": "https://ssd.jpl.nasa.gov/planets/phys_par.html", "kind": "public_reference" },
+      "data_quality": "reference", "discovery_status": "observed", "development_status": "observed"
+    },
+    {
+      "id": "ceres", "canonical_name": "Ceres", "localized_name_zh": "谷神星", "aliases": ["1 Ceres"],
+      "parent_id": "sun", "body_class": "dwarf_planet", "mass_kg": 9.3835e20, "mean_radius_m": 469700, "rotation_period_s": 32667,
+      "ephemeris": { "semi_major_axis_m": 4.139e11, "eccentricity": 0.0758, "inclination_deg": 10.594, "longitude_ascending_node_deg": 80.305, "argument_periapsis_deg": 73.597, "mean_anomaly_at_epoch_deg": 77.372, "orbital_period_s": 145152000, "epoch_tdb_micros": 0 },
+      "ephemeris_source": { "name": "JPL Small-Body Database", "url": "https://ssd.jpl.nasa.gov/tools/sbdb_lookup.html", "kind": "public_reference" },
+      "data_quality": "reference", "discovery_status": "observed", "development_status": "observed"
+    },
+    {
+      "id": "pluto", "canonical_name": "Pluto", "localized_name_zh": "冥王星", "aliases": ["134340 Pluto"],
+      "parent_id": "sun", "body_class": "dwarf_planet", "mass_kg": 1.303e22, "mean_radius_m": 1188300, "rotation_period_s": 551856,
+      "ephemeris": { "semi_major_axis_m": 5.9064e12, "eccentricity": 0.2488, "inclination_deg": 17.16, "longitude_ascending_node_deg": 110.299, "argument_periapsis_deg": 113.834, "mean_anomaly_at_epoch_deg": 14.53, "orbital_period_s": 7829999712, "epoch_tdb_micros": 0 },
+      "ephemeris_source": { "name": "NASA/JPL Pluto system", "url": "https://ssd.jpl.nasa.gov/", "kind": "public_reference" },
+      "data_quality": "reference", "discovery_status": "observed", "development_status": "observed"
+    },
+    {
+      "id": "eris", "canonical_name": "Eris", "localized_name_zh": "阋神星", "aliases": ["136199 Eris"],
+      "parent_id": "sun", "body_class": "dwarf_planet", "mass_kg": 1.6466e22, "mean_radius_m": 1163000, "rotation_period_s": 93240,
+      "ephemeris": { "semi_major_axis_m": 1.015e13, "eccentricity": 0.4407, "inclination_deg": 44.04, "longitude_ascending_node_deg": 35.95, "argument_periapsis_deg": 151.64, "mean_anomaly_at_epoch_deg": 204.16, "orbital_period_s": 17666380800, "epoch_tdb_micros": 0 },
+      "ephemeris_source": { "name": "JPL Small-Body Database", "url": "https://ssd.jpl.nasa.gov/tools/sbdb_lookup.html", "kind": "public_reference" },
+      "data_quality": "approximate", "discovery_status": "observed", "development_status": "observed"
+    },
+    {
+      "id": "haumea", "canonical_name": "Haumea", "localized_name_zh": "妊神星", "aliases": ["136108 Haumea"],
+      "parent_id": "sun", "body_class": "dwarf_planet", "mass_kg": 4.006e21, "mean_radius_m": 780000, "rotation_period_s": 14095,
+      "ephemeris": { "semi_major_axis_m": 6.45e12, "eccentricity": 0.191, "inclination_deg": 28.19, "longitude_ascending_node_deg": 121.9, "argument_periapsis_deg": 240.7, "mean_anomaly_at_epoch_deg": 205.0, "orbital_period_s": 8957952000, "epoch_tdb_micros": 0 },
+      "ephemeris_source": { "name": "JPL Small-Body Database", "url": "https://ssd.jpl.nasa.gov/tools/sbdb_lookup.html", "kind": "approximation" },
+      "data_quality": "approximate", "discovery_status": "observed", "development_status": "observed"
+    },
+    {
+      "id": "makemake", "canonical_name": "Makemake", "localized_name_zh": "鸟神星", "aliases": ["136472 Makemake"],
+      "parent_id": "sun", "body_class": "dwarf_planet", "mass_kg": 3.1e21, "mean_radius_m": 715000, "rotation_period_s": 82080,
+      "ephemeris": { "semi_major_axis_m": 6.85e12, "eccentricity": 0.161, "inclination_deg": 29.0, "longitude_ascending_node_deg": 79.6, "argument_periapsis_deg": 294.8, "mean_anomaly_at_epoch_deg": 165.0, "orbital_period_s": 9643104000, "epoch_tdb_micros": 0 },
+      "ephemeris_source": { "name": "JPL Small-Body Database", "url": "https://ssd.jpl.nasa.gov/tools/sbdb_lookup.html", "kind": "approximation" },
+      "data_quality": "approximate", "discovery_status": "observed", "development_status": "observed"
+    },
+    {
+      "id": "moon", "canonical_name": "Moon", "localized_name_zh": "月球", "aliases": ["Luna"],
+      "parent_id": "earth", "body_class": "moon", "mass_kg": 7.342e22, "mean_radius_m": 1737400, "rotation_period_s": 2360591,
+      "ephemeris": { "semi_major_axis_m": 3.844e8, "eccentricity": 0.0549, "inclination_deg": 5.145, "longitude_ascending_node_deg": 125.08, "argument_periapsis_deg": 318.15, "mean_anomaly_at_epoch_deg": 135.27, "orbital_period_s": 2360591.5, "epoch_tdb_micros": 0 },
+      "ephemeris_source": { "name": "NASA Moon Fact Sheet", "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/moonfact.html", "kind": "public_reference" },
+      "data_quality": "reference", "discovery_status": "observed", "development_status": "observed"
+    },
+    {
+      "id": "phobos", "canonical_name": "Phobos", "localized_name_zh": "火卫一", "aliases": [],
+      "parent_id": "mars", "body_class": "moon", "mass_kg": 1.0659e16, "mean_radius_m": 11267, "rotation_period_s": 27552,
+      "ephemeris": { "semi_major_axis_m": 9.376e6, "eccentricity": 0.0151, "inclination_deg": 1.075, "longitude_ascending_node_deg": 0, "argument_periapsis_deg": 0, "mean_anomaly_at_epoch_deg": 0, "orbital_period_s": 27552, "epoch_tdb_micros": 0 },
+      "ephemeris_source": { "name": "NASA Mars Moons", "url": "https://science.nasa.gov/mars/moons/", "kind": "public_reference" },
+      "data_quality": "reference", "discovery_status": "observed", "development_status": "observed"
+    },
+    {
+      "id": "deimos", "canonical_name": "Deimos", "localized_name_zh": "火卫二", "aliases": [],
+      "parent_id": "mars", "body_class": "moon", "mass_kg": 1.4762e15, "mean_radius_m": 6200, "rotation_period_s": 109080,
+      "ephemeris": { "semi_major_axis_m": 2.3463e7, "eccentricity": 0.00033, "inclination_deg": 1.788, "longitude_ascending_node_deg": 0, "argument_periapsis_deg": 0, "mean_anomaly_at_epoch_deg": 90, "orbital_period_s": 109080, "epoch_tdb_micros": 0 },
+      "ephemeris_source": { "name": "NASA Mars Moons", "url": "https://science.nasa.gov/mars/moons/", "kind": "public_reference" },
+      "data_quality": "reference", "discovery_status": "observed", "development_status": "observed"
+    },
+    {
+      "id": "io", "canonical_name": "Io", "localized_name_zh": "木卫一", "aliases": [],
+      "parent_id": "jupiter", "body_class": "moon", "mass_kg": 8.9319e22, "mean_radius_m": 1821600, "rotation_period_s": 152853,
+      "ephemeris": { "semi_major_axis_m": 4.217e8, "eccentricity": 0.0041, "inclination_deg": 0.05, "longitude_ascending_node_deg": 0, "argument_periapsis_deg": 0, "mean_anomaly_at_epoch_deg": 200, "orbital_period_s": 152853.5, "epoch_tdb_micros": 0 },
+      "ephemeris_source": { "name": "JPL Planetary Satellite Mean Elements", "url": "https://ssd.jpl.nasa.gov/sats/elem/", "kind": "public_reference" },
+      "data_quality": "reference", "discovery_status": "observed", "development_status": "observed"
+    },
+    {
+      "id": "europa", "canonical_name": "Europa", "localized_name_zh": "木卫二", "aliases": [],
+      "parent_id": "jupiter", "body_class": "moon", "mass_kg": 4.7998e22, "mean_radius_m": 1560800, "rotation_period_s": 306822,
+      "ephemeris": { "semi_major_axis_m": 6.711e8, "eccentricity": 0.009, "inclination_deg": 0.47, "longitude_ascending_node_deg": 0, "argument_periapsis_deg": 0, "mean_anomaly_at_epoch_deg": 50, "orbital_period_s": 306822, "epoch_tdb_micros": 0 },
+      "ephemeris_source": { "name": "JPL Planetary Satellite Mean Elements", "url": "https://ssd.jpl.nasa.gov/sats/elem/", "kind": "public_reference" },
+      "data_quality": "reference", "discovery_status": "observed", "development_status": "observed"
+    },
+    {
+      "id": "ganymede", "canonical_name": "Ganymede", "localized_name_zh": "木卫三", "aliases": [],
+      "parent_id": "jupiter", "body_class": "moon", "mass_kg": 1.4819e23, "mean_radius_m": 2634100, "rotation_period_s": 618153,
+      "ephemeris": { "semi_major_axis_m": 1.0704e9, "eccentricity": 0.0013, "inclination_deg": 0.20, "longitude_ascending_node_deg": 0, "argument_periapsis_deg": 0, "mean_anomaly_at_epoch_deg": 300, "orbital_period_s": 618153, "epoch_tdb_micros": 0 },
+      "ephemeris_source": { "name": "JPL Planetary Satellite Mean Elements", "url": "https://ssd.jpl.nasa.gov/sats/elem/", "kind": "public_reference" },
+      "data_quality": "reference", "discovery_status": "observed", "development_status": "observed"
+    },
+    {
+      "id": "callisto", "canonical_name": "Callisto", "localized_name_zh": "木卫四", "aliases": [],
+      "parent_id": "jupiter", "body_class": "moon", "mass_kg": 1.0759e23, "mean_radius_m": 2410300, "rotation_period_s": 1441931,
+      "ephemeris": { "semi_major_axis_m": 1.8827e9, "eccentricity": 0.0074, "inclination_deg": 0.28, "longitude_ascending_node_deg": 0, "argument_periapsis_deg": 0, "mean_anomaly_at_epoch_deg": 120, "orbital_period_s": 1441931, "epoch_tdb_micros": 0 },
+      "ephemeris_source": { "name": "JPL Planetary Satellite Mean Elements", "url": "https://ssd.jpl.nasa.gov/sats/elem/", "kind": "public_reference" },
+      "data_quality": "reference", "discovery_status": "observed", "development_status": "observed"
+    },
+    {
+      "id": "mimas", "canonical_name": "Mimas", "localized_name_zh": "土卫一", "aliases": [],
+      "parent_id": "saturn", "body_class": "moon", "mass_kg": 3.7493e19, "mean_radius_m": 198200, "rotation_period_s": 81389,
+      "ephemeris": { "semi_major_axis_m": 1.8554e8, "eccentricity": 0.0196, "inclination_deg": 1.574, "longitude_ascending_node_deg": 0, "argument_periapsis_deg": 0, "mean_anomaly_at_epoch_deg": 0, "orbital_period_s": 81389, "epoch_tdb_micros": 0 },
+      "ephemeris_source": { "name": "JPL Planetary Satellite Mean Elements", "url": "https://ssd.jpl.nasa.gov/sats/elem/", "kind": "public_reference" },
+      "data_quality": "reference", "discovery_status": "observed", "development_status": "observed"
+    },
+    {
+      "id": "enceladus", "canonical_name": "Enceladus", "localized_name_zh": "土卫二", "aliases": [],
+      "parent_id": "saturn", "body_class": "moon", "mass_kg": 1.0802e20, "mean_radius_m": 252100, "rotation_period_s": 118386,
+      "ephemeris": { "semi_major_axis_m": 2.3804e8, "eccentricity": 0.0047, "inclination_deg": 0.009, "longitude_ascending_node_deg": 0, "argument_periapsis_deg": 0, "mean_anomaly_at_epoch_deg": 45, "orbital_period_s": 118386, "epoch_tdb_micros": 0 },
+      "ephemeris_source": { "name": "JPL Planetary Satellite Mean Elements", "url": "https://ssd.jpl.nasa.gov/sats/elem/", "kind": "public_reference" },
+      "data_quality": "reference", "discovery_status": "observed", "development_status": "observed"
+    },
+    {
+      "id": "tethys", "canonical_name": "Tethys", "localized_name_zh": "土卫三", "aliases": [],
+      "parent_id": "saturn", "body_class": "moon", "mass_kg": 6.1745e20, "mean_radius_m": 531100, "rotation_period_s": 163106,
+      "ephemeris": { "semi_major_axis_m": 2.9467e8, "eccentricity": 0.0001, "inclination_deg": 1.091, "longitude_ascending_node_deg": 0, "argument_periapsis_deg": 0, "mean_anomaly_at_epoch_deg": 90, "orbital_period_s": 163106, "epoch_tdb_micros": 0 },
+      "ephemeris_source": { "name": "JPL Planetary Satellite Mean Elements", "url": "https://ssd.jpl.nasa.gov/sats/elem/", "kind": "public_reference" },
+      "data_quality": "reference", "discovery_status": "observed", "development_status": "observed"
+    },
+    {
+      "id": "dione", "canonical_name": "Dione", "localized_name_zh": "土卫四", "aliases": [],
+      "parent_id": "saturn", "body_class": "moon", "mass_kg": 1.0955e21, "mean_radius_m": 561400, "rotation_period_s": 236470,
+      "ephemeris": { "semi_major_axis_m": 3.7742e8, "eccentricity": 0.0022, "inclination_deg": 0.028, "longitude_ascending_node_deg": 0, "argument_periapsis_deg": 0, "mean_anomaly_at_epoch_deg": 135, "orbital_period_s": 236470, "epoch_tdb_micros": 0 },
+      "ephemeris_source": { "name": "JPL Planetary Satellite Mean Elements", "url": "https://ssd.jpl.nasa.gov/sats/elem/", "kind": "public_reference" },
+      "data_quality": "reference", "discovery_status": "observed", "development_status": "observed"
+    },
+    {
+      "id": "rhea", "canonical_name": "Rhea", "localized_name_zh": "土卫五", "aliases": [],
+      "parent_id": "saturn", "body_class": "moon", "mass_kg": 2.3065e21, "mean_radius_m": 763800, "rotation_period_s": 390535,
+      "ephemeris": { "semi_major_axis_m": 5.2707e8, "eccentricity": 0.001, "inclination_deg": 0.333, "longitude_ascending_node_deg": 0, "argument_periapsis_deg": 0, "mean_anomaly_at_epoch_deg": 180, "orbital_period_s": 390535, "epoch_tdb_micros": 0 },
+      "ephemeris_source": { "name": "JPL Planetary Satellite Mean Elements", "url": "https://ssd.jpl.nasa.gov/sats/elem/", "kind": "public_reference" },
+      "data_quality": "reference", "discovery_status": "observed", "development_status": "observed"
+    },
+    {
+      "id": "titan", "canonical_name": "Titan", "localized_name_zh": "土卫六", "aliases": [],
+      "parent_id": "saturn", "body_class": "moon", "mass_kg": 1.3452e23, "mean_radius_m": 2574700, "rotation_period_s": 1377648,
+      "ephemeris": { "semi_major_axis_m": 1.22187e9, "eccentricity": 0.0288, "inclination_deg": 0.34854, "longitude_ascending_node_deg": 0, "argument_periapsis_deg": 0, "mean_anomaly_at_epoch_deg": 225, "orbital_period_s": 1377648, "epoch_tdb_micros": 0 },
+      "ephemeris_source": { "name": "JPL Planetary Satellite Mean Elements", "url": "https://ssd.jpl.nasa.gov/sats/elem/", "kind": "public_reference" },
+      "data_quality": "reference", "discovery_status": "observed", "development_status": "observed"
+    },
+    {
+      "id": "iapetus", "canonical_name": "Iapetus", "localized_name_zh": "土卫八", "aliases": [],
+      "parent_id": "saturn", "body_class": "moon", "mass_kg": 1.8056e21, "mean_radius_m": 734500, "rotation_period_s": 6853376,
+      "ephemeris": { "semi_major_axis_m": 3.56082e9, "eccentricity": 0.0283, "inclination_deg": 15.47, "longitude_ascending_node_deg": 0, "argument_periapsis_deg": 0, "mean_anomaly_at_epoch_deg": 270, "orbital_period_s": 6853376, "epoch_tdb_micros": 0 },
+      "ephemeris_source": { "name": "JPL Planetary Satellite Mean Elements", "url": "https://ssd.jpl.nasa.gov/sats/elem/", "kind": "public_reference" },
+      "data_quality": "reference", "discovery_status": "observed", "development_status": "observed"
+    },
+    {
+      "id": "ariel", "canonical_name": "Ariel", "localized_name_zh": "天卫一", "aliases": [],
+      "parent_id": "uranus", "body_class": "moon", "mass_kg": 1.251e21, "mean_radius_m": 578900, "rotation_period_s": 217728,
+      "ephemeris": { "semi_major_axis_m": 1.909e8, "eccentricity": 0.0012, "inclination_deg": 0.041, "longitude_ascending_node_deg": 0, "argument_periapsis_deg": 0, "mean_anomaly_at_epoch_deg": 15, "orbital_period_s": 217728, "epoch_tdb_micros": 0 },
+      "ephemeris_source": { "name": "JPL Planetary Satellite Mean Elements", "url": "https://ssd.jpl.nasa.gov/sats/elem/", "kind": "public_reference" },
+      "data_quality": "reference", "discovery_status": "observed", "development_status": "observed"
+    },
+    {
+      "id": "umbriel", "canonical_name": "Umbriel", "localized_name_zh": "天卫二", "aliases": [],
+      "parent_id": "uranus", "body_class": "moon", "mass_kg": 1.275e21, "mean_radius_m": 584700, "rotation_period_s": 358192,
+      "ephemeris": { "semi_major_axis_m": 2.660e8, "eccentricity": 0.0039, "inclination_deg": 0.128, "longitude_ascending_node_deg": 0, "argument_periapsis_deg": 0, "mean_anomaly_at_epoch_deg": 75, "orbital_period_s": 358192, "epoch_tdb_micros": 0 },
+      "ephemeris_source": { "name": "JPL Planetary Satellite Mean Elements", "url": "https://ssd.jpl.nasa.gov/sats/elem/", "kind": "public_reference" },
+      "data_quality": "reference", "discovery_status": "observed", "development_status": "observed"
+    },
+    {
+      "id": "titania", "canonical_name": "Titania", "localized_name_zh": "天卫三", "aliases": [],
+      "parent_id": "uranus", "body_class": "moon", "mass_kg": 3.527e21, "mean_radius_m": 788900, "rotation_period_s": 752218,
+      "ephemeris": { "semi_major_axis_m": 4.359e8, "eccentricity": 0.0011, "inclination_deg": 0.079, "longitude_ascending_node_deg": 0, "argument_periapsis_deg": 0, "mean_anomaly_at_epoch_deg": 135, "orbital_period_s": 752218, "epoch_tdb_micros": 0 },
+      "ephemeris_source": { "name": "JPL Planetary Satellite Mean Elements", "url": "https://ssd.jpl.nasa.gov/sats/elem/", "kind": "public_reference" },
+      "data_quality": "reference", "discovery_status": "observed", "development_status": "observed"
+    },
+    {
+      "id": "oberon", "canonical_name": "Oberon", "localized_name_zh": "天卫四", "aliases": [],
+      "parent_id": "uranus", "body_class": "moon", "mass_kg": 3.014e21, "mean_radius_m": 761400, "rotation_period_s": 1162880,
+      "ephemeris": { "semi_major_axis_m": 5.835e8, "eccentricity": 0.0014, "inclination_deg": 0.068, "longitude_ascending_node_deg": 0, "argument_periapsis_deg": 0, "mean_anomaly_at_epoch_deg": 195, "orbital_period_s": 1162880, "epoch_tdb_micros": 0 },
+      "ephemeris_source": { "name": "JPL Planetary Satellite Mean Elements", "url": "https://ssd.jpl.nasa.gov/sats/elem/", "kind": "public_reference" },
+      "data_quality": "reference", "discovery_status": "observed", "development_status": "observed"
+    },
+    {
+      "id": "miranda", "canonical_name": "Miranda", "localized_name_zh": "天卫五", "aliases": [],
+      "parent_id": "uranus", "body_class": "moon", "mass_kg": 6.59e19, "mean_radius_m": 235800, "rotation_period_s": 122141,
+      "ephemeris": { "semi_major_axis_m": 1.299e8, "eccentricity": 0.0013, "inclination_deg": 4.338, "longitude_ascending_node_deg": 0, "argument_periapsis_deg": 0, "mean_anomaly_at_epoch_deg": 255, "orbital_period_s": 122141, "epoch_tdb_micros": 0 },
+      "ephemeris_source": { "name": "JPL Planetary Satellite Mean Elements", "url": "https://ssd.jpl.nasa.gov/sats/elem/", "kind": "public_reference" },
+      "data_quality": "reference", "discovery_status": "observed", "development_status": "observed"
+    },
+    {
+      "id": "triton", "canonical_name": "Triton", "localized_name_zh": "海卫一", "aliases": [],
+      "parent_id": "neptune", "body_class": "moon", "mass_kg": 2.139e22, "mean_radius_m": 1353400, "rotation_period_s": 507773,
+      "ephemeris": { "semi_major_axis_m": 3.54759e8, "eccentricity": 0.000016, "inclination_deg": 156.865, "longitude_ascending_node_deg": 0, "argument_periapsis_deg": 0, "mean_anomaly_at_epoch_deg": 300, "orbital_period_s": 507773, "epoch_tdb_micros": 0 },
+      "ephemeris_source": { "name": "JPL Planetary Satellite Mean Elements", "url": "https://ssd.jpl.nasa.gov/sats/elem/", "kind": "public_reference" },
+      "data_quality": "reference", "discovery_status": "observed", "development_status": "observed"
+    },
+    {
+      "id": "charon", "canonical_name": "Charon", "localized_name_zh": "冥卫一", "aliases": [],
+      "parent_id": "pluto", "body_class": "moon", "mass_kg": 1.586e21, "mean_radius_m": 606000, "rotation_period_s": 551856,
+      "ephemeris": { "semi_major_axis_m": 1.9596e7, "eccentricity": 0.0002, "inclination_deg": 0.001, "longitude_ascending_node_deg": 0, "argument_periapsis_deg": 0, "mean_anomaly_at_epoch_deg": 0, "orbital_period_s": 551856, "epoch_tdb_micros": 0 },
+      "ephemeris_source": { "name": "NASA/JPL Pluto system", "url": "https://ssd.jpl.nasa.gov/", "kind": "public_reference" },
+      "data_quality": "reference", "discovery_status": "observed", "development_status": "observed"
+    },
+    {
+      "id": "vesta", "canonical_name": "Vesta", "localized_name_zh": "灶神星", "aliases": ["4 Vesta"],
+      "parent_id": "sun", "body_class": "asteroid", "mass_kg": 2.5908e20, "mean_radius_m": 262700, "rotation_period_s": 19231,
+      "ephemeris": { "semi_major_axis_m": 3.533e11, "eccentricity": 0.089, "inclination_deg": 7.14, "longitude_ascending_node_deg": 103.8, "argument_periapsis_deg": 151.2, "mean_anomaly_at_epoch_deg": 20, "orbital_period_s": 114851520, "epoch_tdb_micros": 0 },
+      "ephemeris_source": { "name": "JPL Small-Body Database", "url": "https://ssd.jpl.nasa.gov/tools/sbdb_lookup.html", "kind": "public_reference" },
+      "data_quality": "reference", "discovery_status": "observed", "development_status": "observed"
+    },
+    {
+      "id": "pallas", "canonical_name": "Pallas", "localized_name_zh": "智神星", "aliases": ["2 Pallas"],
+      "parent_id": "sun", "body_class": "asteroid", "mass_kg": 2.04e20, "mean_radius_m": 256000, "rotation_period_s": 28116,
+      "ephemeris": { "semi_major_axis_m": 4.142e11, "eccentricity": 0.231, "inclination_deg": 34.84, "longitude_ascending_node_deg": 173.1, "argument_periapsis_deg": 310.2, "mean_anomaly_at_epoch_deg": 50, "orbital_period_s": 145497600, "epoch_tdb_micros": 0 },
+      "ephemeris_source": { "name": "JPL Small-Body Database", "url": "https://ssd.jpl.nasa.gov/tools/sbdb_lookup.html", "kind": "public_reference" },
+      "data_quality": "reference", "discovery_status": "observed", "development_status": "observed"
+    },
+    {
+      "id": "hygiea", "canonical_name": "Hygiea", "localized_name_zh": "健神星", "aliases": ["10 Hygiea"],
+      "parent_id": "sun", "body_class": "asteroid", "mass_kg": 8.67e19, "mean_radius_m": 217000, "rotation_period_s": 49565,
+      "ephemeris": { "semi_major_axis_m": 4.701e11, "eccentricity": 0.112, "inclination_deg": 3.83, "longitude_ascending_node_deg": 283.2, "argument_periapsis_deg": 312.3, "mean_anomaly_at_epoch_deg": 80, "orbital_period_s": 175305600, "epoch_tdb_micros": 0 },
+      "ephemeris_source": { "name": "JPL Small-Body Database", "url": "https://ssd.jpl.nasa.gov/tools/sbdb_lookup.html", "kind": "public_reference" },
+      "data_quality": "approximate", "discovery_status": "observed", "development_status": "observed"
+    },
+    {
+      "id": "psyche", "canonical_name": "Psyche", "localized_name_zh": "灵神星", "aliases": ["16 Psyche"],
+      "parent_id": "sun", "body_class": "asteroid", "mass_kg": 2.29e19, "mean_radius_m": 111000, "rotation_period_s": 15102,
+      "ephemeris": { "semi_major_axis_m": 4.371e11, "eccentricity": 0.134, "inclination_deg": 3.10, "longitude_ascending_node_deg": 150.0, "argument_periapsis_deg": 229.5, "mean_anomaly_at_epoch_deg": 110, "orbital_period_s": 158803200, "epoch_tdb_micros": 0 },
+      "ephemeris_source": { "name": "JPL Small-Body Database", "url": "https://ssd.jpl.nasa.gov/tools/sbdb_lookup.html", "kind": "public_reference" },
+      "data_quality": "approximate", "discovery_status": "observed", "development_status": "observed"
+    },
+    {
+      "id": "chiron", "canonical_name": "Chiron", "localized_name_zh": "凯龙星", "aliases": ["2060 Chiron"],
+      "parent_id": "sun", "body_class": "centaur", "mass_kg": 4.8e18, "mean_radius_m": 90000, "rotation_period_s": 21456,
+      "ephemeris": { "semi_major_axis_m": 2.06e12, "eccentricity": 0.382, "inclination_deg": 6.93, "longitude_ascending_node_deg": 209.4, "argument_periapsis_deg": 339.6, "mean_anomaly_at_epoch_deg": 140, "orbital_period_s": 1590624000, "epoch_tdb_micros": 0 },
+      "ephemeris_source": { "name": "JPL Small-Body Database", "url": "https://ssd.jpl.nasa.gov/tools/sbdb_lookup.html", "kind": "approximation" },
+      "data_quality": "approximate", "discovery_status": "observed", "development_status": "observed"
+    },
+    {
+      "id": "arrokoth", "canonical_name": "Arrokoth", "localized_name_zh": "阿罗科特", "aliases": ["486958 Arrokoth", "Ultima Thule"],
+      "parent_id": "sun", "body_class": "kuiper_belt_object", "mass_kg": 3.0e15, "mean_radius_m": 10000, "rotation_period_s": 57420,
+      "ephemeris": { "semi_major_axis_m": 6.67e12, "eccentricity": 0.042, "inclination_deg": 2.45, "longitude_ascending_node_deg": 158.9, "argument_periapsis_deg": 174.4, "mean_anomaly_at_epoch_deg": 190, "orbital_period_s": 9393408000, "epoch_tdb_micros": 0 },
+      "ephemeris_source": { "name": "JPL Small-Body Database", "url": "https://ssd.jpl.nasa.gov/tools/sbdb_lookup.html", "kind": "approximation" },
+      "data_quality": "approximate", "discovery_status": "observed", "development_status": "observed"
+    }
+  ],
+  "regions": [
+    {
+      "id": "asteroid-belt", "canonical_name": "Asteroid Belt", "localized_name_zh": "小行星带",
+      "inner_radius_m": 2.99e11, "outer_radius_m": 5.20e11,
+      "description": "A statistical population region between Mars and Jupiter; not a landable body."
+    },
+    {
+      "id": "centaur-region", "canonical_name": "Centaur Region", "localized_name_zh": "半人马族区域",
+      "inner_radius_m": 7.48e11, "outer_radius_m": 4.49e12,
+      "description": "A statistical population crossing the giant-planet region; not a landable body."
+    },
+    {
+      "id": "kuiper-belt", "canonical_name": "Kuiper Belt", "localized_name_zh": "柯伊伯带",
+      "inner_radius_m": 4.49e12, "outer_radius_m": 7.48e12,
+      "description": "A statistical trans-Neptunian population region; not a landable body."
+    }
+  ]
+}

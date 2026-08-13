@@ -1,0 +1,18 @@
+[package]
+name = "sim-tools"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "sim-tools"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+serde_json.workspace = true
+sim-app = { path = "../sim-app" }
+sim-astro = { path = "../sim-astro" }
+sim-time = { path = "../sim-time" }
+

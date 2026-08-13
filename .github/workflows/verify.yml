@@ -1,0 +1,28 @@
+name: verify
+on:
+  push:
+  pull_request:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+      - run: npm run lint
+      - run: npm run test
+      - run: npm run build
+      - run: npm run docs:check
+      - run: cargo run -p sim-tools -- catalog audit
+      - run: cargo run -p sim-tools -- ephemeris verify --span-years 200
+      - run: cargo run -p sim-tools -- replay empty-world --rates 0,1,100,10000
+
