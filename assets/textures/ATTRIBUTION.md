@@ -52,7 +52,7 @@ otherwise noted. They are redistributed here as JPEG textures without logos or i
 
 ## J2000 star background
 
-`starfield-j2000-4k.jpg` is an sRGB JPEG conversion of the 4096 × 2048 OpenEXR map from
+`starfield-j2000-8k.jpg` is an sRGB JPEG conversion of the 8192 × 4096 OpenEXR map from
 [NASA Goddard Scientific Visualization Studio, Deep Star Maps 2020](https://svs.gsfc.nasa.gov/4851/).
 It plots the positions, brightness, and colors of stars from Hipparcos-2, Tycho-2, Gaia DR2,
 the Yale Bright Star Catalog, UCAC3, and XHIP in ICRF/J2000 celestial coordinates. Credit:

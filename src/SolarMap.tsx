@@ -53,6 +53,7 @@ interface Props {
 interface BodyVisual {
   body: Body
   root: THREE.Group
+  axisGroup: THREE.Group
   mesh: THREE.Mesh<THREE.SphereGeometry, THREE.MeshStandardMaterial>
   material: THREE.MeshStandardMaterial
   baseRadius: number
@@ -69,6 +70,18 @@ interface ScopeModel {
   maxRadius: number
   global: boolean
   bodies: Body[]
+  contextExtent: number
+  focusRadiusScene: number
+}
+
+interface OrbitVisual {
+  root: THREE.Group
+  body: Body
+  flowGeometry: THREE.BufferGeometry
+  flowCurve: THREE.CatmullRomCurve3
+  flowTrailLength: number
+  phaseLead: number
+  anchorBodyId?: string
 }
 
 function bodyColor(body: Body): number {
@@ -112,19 +125,22 @@ const textureUrls: Record<string, string> = {
 const saturnRingUrl = new URL('../assets/textures/saturn_ring.png', import.meta.url).href
 const earthCloudUrl = new URL('../assets/textures/earth_clouds.jpg', import.meta.url).href
 const earthNightUrl = new URL('../assets/textures/earth_nightmap.jpg', import.meta.url).href
-const starfieldUrl = new URL('../assets/textures/starfield-j2000-4k.jpg', import.meta.url).href
-const LOCAL_SUN_DISPLAY_DISTANCE = 92
+const starfieldUrl = new URL('../assets/textures/starfield-j2000-8k.jpg', import.meta.url).href
+const LOCAL_REFERENCE_RADIUS = 72
+const LOCAL_MAX_CONTEXT_EXTENT = 120_000
+const FOCUS_CAMERA_RADII = 16
+const LOCAL_SUN_RADIUS_BOOST = 1.45
+const LOCAL_SUN_GLOW_MULTIPLIER = 5.2
+const VISUAL_FOCUS_OFFSET_RADII = 3.6
 
 function sunAppearance(distanceAu: number, global: boolean) {
   if (global) {
-    return { radiusScale: 1, glowSize: 30, emissiveIntensity: 3.4, lightIntensity: 9.5 }
+    return { glowSize: 30, emissiveIntensity: 3.4, lightIntensity: 9.5 }
   }
   const safeDistance = Math.max(distanceAu, 0.2)
-  const apparentScale = THREE.MathUtils.clamp(1 / Math.sqrt(safeDistance), 0.68, 2.25)
   const irradiance = THREE.MathUtils.clamp(1 / (safeDistance * safeDistance), 0.28, 5)
   return {
-    radiusScale: apparentScale * 1.35,
-    glowSize: 34 * apparentScale,
+    glowSize: 30,
     emissiveIntensity: 3.6 + Math.sqrt(irradiance) * 1.15,
     lightIntensity: 7.5 * irradiance,
   }
@@ -145,11 +161,10 @@ function displayPosition(
 ): THREE.Vector3 {
   const actualRadius = Math.hypot(...source)
   if (actualRadius === 0) return new THREE.Vector3()
-  const normalized = global
-    ? Math.log1p(actualRadius / (0.08 * AU)) / Math.log1p(maxRadius / (0.08 * AU))
-    : Math.pow(actualRadius / maxRadius, 0.62)
-  const displayRadius = (global ? 178 : 72) * normalized
-  const multiplier = displayRadius / actualRadius
+  const multiplier = global
+    ? 178 * Math.log1p(actualRadius / (0.08 * AU))
+      / Math.log1p(maxRadius / (0.08 * AU)) / actualRadius
+    : LOCAL_REFERENCE_RADIUS / maxRadius
   // Three.js uses Y as up; the ecliptic X/Y plane becomes the scene X/Z plane.
   return new THREE.Vector3(
     source[0] * multiplier,
@@ -183,6 +198,47 @@ function createSelectionTexture(): THREE.CanvasTexture {
   context.arc(64, 64, 50, 0, Math.PI * 2)
   context.stroke()
   return new THREE.CanvasTexture(canvas)
+}
+
+function createOrbitFlowMaterial(
+  color: number,
+  opacity: number,
+  pointSize: number,
+): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      flowColor: { value: new THREE.Color(color) },
+      flowOpacity: { value: opacity },
+      flowPointSize: { value: pointSize },
+    },
+    vertexShader: `
+      uniform float flowPointSize;
+      attribute float flowStrength;
+      varying float vFlowStrength;
+      void main() {
+        vFlowStrength = flowStrength;
+        vec4 viewPosition = modelViewMatrix * vec4(position, 1.0);
+        gl_PointSize = flowPointSize * mix(0.28, 1.0, pow(flowStrength, 1.4));
+        gl_Position = projectionMatrix * viewPosition;
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 flowColor;
+      uniform float flowOpacity;
+      varying float vFlowStrength;
+      void main() {
+        float radius = length(gl_PointCoord - vec2(0.5));
+        float softDisc = 1.0 - smoothstep(0.12, 0.5, radius);
+        float alpha = softDisc * pow(vFlowStrength, 2.1) * flowOpacity;
+        if (alpha < 0.018) discard;
+        gl_FragColor = vec4(flowColor, alpha);
+      }
+    `,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  })
 }
 
 function createNightLightsMaterial(nightMap: THREE.Texture, sunPosition: THREE.Vector3): THREE.ShaderMaterial {
@@ -279,11 +335,17 @@ export function SolarMap({
 
     const scene = new THREE.Scene()
     scene.background = new THREE.Color(0x050d10)
-    scene.fog = new THREE.FogExp2(0x050d10, 0.00125)
+    const sceneFog = new THREE.FogExp2(0x050d10, 0.00125)
+    scene.fog = sceneFog
 
     const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 2_500)
     camera.position.set(0, 118, 228)
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' })
+    const renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      alpha: false,
+      powerPreference: 'high-performance',
+      logarithmicDepthBuffer: true,
+    })
     renderer.outputColorSpace = THREE.SRGBColorSpace
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.toneMappingExposure = 1.08
@@ -301,7 +363,7 @@ export function SolarMap({
     controls.rotateSpeed = 0.55
     controls.zoomSpeed = 0.82
     controls.panSpeed = 0.5
-    controls.minDistance = 9
+    controls.minDistance = 0.1
     controls.maxDistance = 520
     controls.target.set(0, 0, 0)
 
@@ -347,26 +409,96 @@ export function SolarMap({
     const sunWorldPosition = new THREE.Vector3()
     const cloudPhase = Math.random() * Math.PI * 2
     let visuals: BodyVisual[] = []
+    let orbitVisuals: OrbitVisual[] = []
     let scope: ScopeModel = {
       focus: bodyById.get('sun')!,
       maxRadius: 70 * AU,
       global: true,
       bodies: [],
+      contextExtent: 178,
+      focusRadiusScene: 7,
     }
     let cameraGoal = camera.position.clone()
     const targetGoal = new THREE.Vector3()
     let cameraTransition = false
+    let cameraFollowsOrbit = false
 
-    const setCameraPreset = (preset: 'perspective' | 'top') => {
-      const distance = scope.global ? 248 : 220
-      cameraGoal = preset === 'top'
-        ? new THREE.Vector3(0.01, distance, 0.01)
-        : new THREE.Vector3(distance * 0.52, distance * 0.46, distance * 0.78)
-      targetGoal.set(0, 0, 0)
-      cameraTransition = true
+    const localContextBody = () => scope.focus.body_class === 'moon' && scope.focus.parent_id
+      ? bodyById.get(scope.focus.parent_id)
+      : bodyById.get('sun')
+
+    const visualFocusOffset = () => {
+      if (scope.global || viewPresetValueRef.current === 'top') return new THREE.Vector3()
+      const contextBody = localContextBody()
+      if (!contextBody) return new THREE.Vector3()
+      const contextPosition = displayPosition(
+        relativePosition(contextBody, scope.focus, epochRef.current),
+        scope.maxRadius,
+        false,
+      )
+      const distance = contextPosition.length()
+      if (distance === 0) return contextPosition
+      const offsetDistance = Math.min(
+        distance * 0.42,
+        scope.focusRadiusScene * VISUAL_FOCUS_OFFSET_RADII,
+      )
+      return contextPosition.multiplyScalar(offsetDistance / distance)
     }
 
-    const buildOrbit = (body: Body) => {
+    const orbitCameraDirection = () => {
+      const contextBody = localContextBody()
+      if (!contextBody) return new THREE.Vector3(0.52, 0.46, 0.78).normalize()
+      const contextDirection = displayPosition(
+        relativePosition(contextBody, scope.focus, epochRef.current),
+        scope.maxRadius,
+        false,
+      ).normalize()
+      contextDirection.multiplyScalar(-1)
+      contextDirection.y += 0.12
+      return contextDirection.normalize()
+    }
+
+    const isRemoteContextBody = (body: Body) => !scope.global && (
+      body.id === 'sun'
+      || (scope.focus.body_class === 'moon' && body.id === scope.focus.parent_id)
+    )
+
+    const setCameraPreset = (preset: 'perspective' | 'top') => {
+      const fittedDistance = THREE.MathUtils.clamp(
+        scope.focusRadiusScene * FOCUS_CAMERA_RADII,
+        0.01,
+        120,
+      )
+      const distance = scope.global
+        ? 248
+        : fittedDistance
+      if (preset === 'top') {
+        cameraGoal = new THREE.Vector3(0.01, distance, 0.01)
+      } else if (!scope.global) {
+        cameraGoal = orbitCameraDirection().multiplyScalar(distance)
+      } else {
+        cameraGoal = new THREE.Vector3(distance * 0.52, distance * 0.46, distance * 0.78)
+      }
+      targetGoal.set(0, 0, 0)
+      camera.near = scope.global ? 0.1 : Math.max(0.000001, distance / 200_000)
+      camera.far = Math.max(2_500, scope.contextExtent * 12, distance * 12)
+      camera.updateProjectionMatrix()
+      controls.minDistance = scope.global ? 9 : Math.max(scope.focusRadiusScene * 2.4, 0.0001)
+      controls.maxDistance = Math.max(520, scope.contextExtent * 6)
+      camera.position.copy(cameraGoal)
+      controls.target.copy(targetGoal)
+      cameraTransition = false
+      cameraFollowsOrbit = !scope.global && preset === 'perspective'
+      controls.update()
+      const showRemoteContext = preset === 'perspective'
+      for (const visual of visuals) {
+        const visible = showRemoteContext || !isRemoteContextBody(visual.body)
+        visual.root.visible = visible
+        visual.labelObject.visible = visible
+      }
+    }
+
+    const buildOrbit = (body: Body, anchorBodyId?: string) => {
       if (!body.ephemeris) return
       const points: THREE.Vector3[] = []
       const samples = 192
@@ -377,36 +509,133 @@ export function SolarMap({
       }
       const geometry = new THREE.BufferGeometry().setFromPoints(points)
       const material = new THREE.LineBasicMaterial({
-        color: body.body_class === 'planet' ? 0x41666c : 0x31494e,
+        color: body.id === scope.focus.id
+          ? 0x62502e
+          : body.body_class === 'planet' ? 0x41666c : 0x31494e,
         transparent: true,
-        opacity: scope.global ? 0.34 : 0.48,
+        opacity: body.id === scope.focus.id ? 0.34 : scope.global ? 0.28 : 0.4,
       })
-      scopeGroup.add(new THREE.Line(geometry, material))
+      const line = new THREE.Line(geometry, material)
+      const orbitRoot = new THREE.Group()
+      orbitRoot.add(line)
+      const flowCurve = new THREE.CatmullRomCurve3(points.slice(0, -1), true, 'centripetal')
+      const isFocusedOrbit = body.id === scope.focus.id
+      const flowPointCount = isFocusedOrbit ? 26 : 12
+      const flowGeometry = new THREE.BufferGeometry()
+      flowGeometry.setAttribute(
+        'position',
+        new THREE.BufferAttribute(new Float32Array(flowPointCount * 3), 3),
+      )
+      flowGeometry.setAttribute(
+        'flowStrength',
+        new THREE.BufferAttribute(
+          Float32Array.from(
+            { length: flowPointCount },
+            (_, index) => (index + 1) / flowPointCount,
+          ),
+          1,
+        ),
+      )
+      const flowMaterial = createOrbitFlowMaterial(
+        isFocusedOrbit ? 0xffc96b : 0x64d4ca,
+        isFocusedOrbit ? 0.92 : 0.5,
+        isFocusedOrbit ? 7.2 : 4.2,
+      )
+      const flowTrail = new THREE.Points(flowGeometry, flowMaterial)
+      // The point positions move around the full orbit every frame, so their
+      // initial zero-sized bounds must not be used for frustum culling.
+      flowTrail.frustumCulled = false
+      flowTrail.renderOrder = 2
+      orbitRoot.add(flowTrail)
+      let orbitLength = 0
+      for (let index = 1; index < points.length; index += 1) {
+        orbitLength += points[index].distanceTo(points[index - 1])
+      }
+      const desiredTrailLength = scope.focusRadiusScene * (isFocusedOrbit ? 10 : 6)
+      const flowTrailLength = THREE.MathUtils.clamp(
+        desiredTrailLength / Math.max(orbitLength, 0.0001),
+        0.00004,
+        scope.global ? 0.018 : 0.03,
+      )
+      const phaseLead = THREE.MathUtils.clamp(
+        scope.focusRadiusScene * (isFocusedOrbit ? 4 : 2.5) / Math.max(orbitLength, 0.0001),
+        0.00002,
+        scope.global ? 0.008 : 0.015,
+      )
+      scopeGroup.add(orbitRoot)
+      orbitVisuals.push({
+        root: orbitRoot,
+        body,
+        flowGeometry,
+        flowCurve,
+        flowTrailLength,
+        phaseLead,
+        anchorBodyId,
+      })
     }
 
     const buildScope = (nextFocusId: string) => {
       disposeGroup(scopeGroup)
       visuals = []
+      orbitVisuals = []
       const focus = bodyById.get(nextFocusId) ?? bodyById.get('sun')!
       const children = childrenOf(focus.id)
       const global = focus.id === 'sun'
       const focusOrbitRadius = focus.body_class === 'moon' && focus.ephemeris
         ? focus.ephemeris.semi_major_axis_m * (1 + focus.ephemeris.eccentricity)
-        : 1
-      const maxRadius = Math.max(
-        ...children.map((body) => body.ephemeris
-          ? body.ephemeris.semi_major_axis_m * (1 + body.ephemeris.eccentricity)
-          : 1),
-        global ? 70 * AU : focusOrbitRadius,
-      )
+        : 0
+      const minimumLocalRadius = focus.mean_radius_m * 40
       const sun = bodyById.get('sun')!
       const parent = focus.parent_id ? bodyById.get(focus.parent_id) : undefined
       const localBodies = [sun, parent, focus, ...children]
         .filter((body): body is Body => Boolean(body))
         .filter((body, index, bodies) => bodies.findIndex((candidate) => candidate.id === body.id) === index)
-      scope = { focus, maxRadius, global, bodies: global ? [focus, ...children] : localBodies }
+      const referenceRadius = Math.max(
+        ...children.map((body) => body.ephemeris
+          ? body.ephemeris.semi_major_axis_m * (1 + body.ephemeris.eccentricity)
+          : 1),
+        global ? 70 * AU : focusOrbitRadius,
+        global ? 1 : minimumLocalRadius,
+      )
+      const bodies = global ? [focus, ...children] : localBodies
+      const physicalBodyExtent = global ? 0 : Math.max(...bodies.map((body) => (
+        Math.hypot(...relativePosition(body, focus, epochRef.current)) + body.mean_radius_m
+      )))
+      const physicalParentDistance = !global && parent
+        ? Math.hypot(...relativePosition(parent, focus, epochRef.current))
+        : 0
+      const physicalFocusOrbitExtent = !global && focus.ephemeris
+        ? physicalParentDistance + focus.ephemeris.semi_major_axis_m * (1 + focus.ephemeris.eccentricity)
+        : 0
+      // One linear scale is shared by every local distance and radius. Only the
+      // overall normalization is capped so very small KBOs do not create 1e9-unit scenes.
+      const safeContextReference = Math.max(physicalBodyExtent, physicalFocusOrbitExtent)
+        * LOCAL_REFERENCE_RADIUS / LOCAL_MAX_CONTEXT_EXTENT
+      const maxRadius = global ? referenceRadius : Math.max(referenceRadius, safeContextReference)
+      const localScale = LOCAL_REFERENCE_RADIUS / maxRadius
+      const focusRadiusScene = global ? bodyRadius(focus, true, true) : focus.mean_radius_m * localScale
+      const bodyExtent = global ? 178 : Math.max(...bodies.map((body) => {
+        const distance = Math.hypot(...relativePosition(body, focus, epochRef.current)) * localScale
+        return distance + body.mean_radius_m * localScale
+      }))
+      const parentDistance = !global && focus.parent_id
+        ? Math.hypot(...relativePosition(bodyById.get(focus.parent_id)!, focus, epochRef.current)) * localScale
+        : 0
+      const focusOrbitExtent = !global && focus.ephemeris
+        ? parentDistance + focus.ephemeris.semi_major_axis_m * (1 + focus.ephemeris.eccentricity) * localScale
+        : 0
+      scope = {
+        focus,
+        maxRadius,
+        global,
+        bodies,
+        contextExtent: Math.max(bodyExtent, focusOrbitExtent, LOCAL_REFERENCE_RADIUS),
+        focusRadiusScene,
+      }
+      sceneFog.density = global ? 0.00125 : 0
 
-      children.forEach(buildOrbit)
+      if (!global && focus.ephemeris && focus.parent_id) buildOrbit(focus, focus.parent_id)
+      children.forEach((body) => buildOrbit(body))
 
       for (const body of scope.bodies) {
         const isFocus = body.id === focus.id
@@ -505,6 +734,7 @@ export function SolarMap({
         visuals.push({
           body,
           root,
+          axisGroup,
           mesh,
           material,
           baseRadius: radius,
@@ -559,7 +789,10 @@ export function SolarMap({
     renderer.domElement.addEventListener('pointerdown', handlePointerDown)
     renderer.domElement.addEventListener('pointerup', handlePointerUp)
     renderer.domElement.addEventListener('dblclick', handleDoubleClick)
-    controls.addEventListener('start', () => { cameraTransition = false })
+    controls.addEventListener('start', () => {
+      cameraTransition = false
+      cameraFollowsOrbit = false
+    })
 
     const resize = () => {
       const width = Math.max(container.clientWidth, 1)
@@ -586,22 +819,58 @@ export function SolarMap({
         epochRef.current += deltaSeconds * timeRateRef.current * 1e6
       }
 
+      const frameOffset = visualFocusOffset()
+      for (const orbit of orbitVisuals) {
+        const anchor = orbit.anchorBodyId ? bodyById.get(orbit.anchorBodyId) : undefined
+        const anchorPosition = anchor
+          ? displayPosition(
+            relativePosition(anchor, scope.focus, epochRef.current),
+            scope.maxRadius,
+            scope.global,
+          )
+          : new THREE.Vector3()
+        orbit.root.position.copy(anchorPosition.sub(frameOffset))
+        if (orbit.body.ephemeris) {
+          const elapsedPeriods = (epochRef.current - orbit.body.ephemeris.epoch_tdb_micros)
+            / (orbit.body.ephemeris.orbital_period_s * 1e6)
+          const phase = ((elapsedPeriods % 1) + 1) % 1
+          const positions = orbit.flowGeometry.getAttribute('position') as THREE.BufferAttribute
+          const lastPoint = Math.max(positions.count - 1, 1)
+          for (let index = 0; index < positions.count; index += 1) {
+            const progress = index / lastPoint
+            const samplePhase = (
+              phase + orbit.phaseLead - orbit.flowTrailLength * (1 - progress) + 1
+            ) % 1
+            const point = orbit.flowCurve.getPoint(samplePhase)
+            positions.setXYZ(index, point.x, point.y, point.z)
+          }
+          positions.needsUpdate = true
+        }
+      }
+
       for (const visual of visuals) {
         const relative = relativePosition(visual.body, scope.focus, epochRef.current)
-        const nextPosition = !scope.global && visual.body.id === 'sun'
-          ? displayPosition(relative, Math.hypot(...relative), false).normalize().multiplyScalar(LOCAL_SUN_DISPLAY_DISTANCE)
-          : displayPosition(relative, scope.maxRadius, scope.global)
+        const nextPosition = displayPosition(relative, scope.maxRadius, scope.global).sub(frameOffset)
         visual.root.position.copy(nextPosition)
         visual.labelObject.position.copy(nextPosition)
+        const physicalRadius = visual.body.mean_radius_m * LOCAL_REFERENCE_RADIUS / scope.maxRadius
+        const renderedRadius = !scope.global && visual.body.id === 'sun'
+          ? physicalRadius * LOCAL_SUN_RADIUS_BOOST
+          : physicalRadius
+        const radiusScale = scope.global ? 1 : renderedRadius / visual.baseRadius
+        visual.axisGroup.scale.setScalar(radiusScale)
+        const haloRadius = (scope.global ? visual.baseRadius : renderedRadius) * 3.1
+        visual.selectionHalo.scale.set(haloRadius, haloRadius, 1)
         if (visual.body.id === 'sun') {
           sunWorldPosition.copy(nextPosition)
           sunlight.position.copy(nextPosition)
           const appearance = sunAppearance(Math.hypot(...relative) / AU, scope.global)
-          visual.mesh.scale.setScalar(appearance.radiusScale)
           visual.material.emissiveIntensity = appearance.emissiveIntensity
           sunlight.intensity = appearance.lightIntensity
-          visual.glow?.scale.set(appearance.glowSize, appearance.glowSize, 1)
-          visual.selectionHalo.scale.setScalar(visual.baseRadius * appearance.radiusScale * 3.1)
+          const glowSize = scope.global
+            ? appearance.glowSize
+            : renderedRadius * LOCAL_SUN_GLOW_MULTIPLIER
+          visual.glow?.scale.set(glowSize, glowSize, 1)
         }
         if (visual.body.rotation_period_s) {
           const rotation = (epochRef.current / 1e6 / visual.body.rotation_period_s * Math.PI * 2) % (Math.PI * 2)
@@ -614,7 +883,6 @@ export function SolarMap({
           }
         }
         const selected = visual.body.id === selectedRef.current
-        if (visual.body.id !== 'sun') visual.mesh.scale.setScalar(1)
         visual.selectionHalo.visible = selected
         visual.material.emissive.setHex(visual.body.body_class === 'star' ? 0xffffff : 0x000000)
         visual.label.classList.toggle('selected', selected)
@@ -628,6 +896,11 @@ export function SolarMap({
         camera.position.lerp(cameraGoal, 0.075)
         controls.target.lerp(targetGoal, 0.075)
         if (camera.position.distanceTo(cameraGoal) < 0.12) cameraTransition = false
+      } else if (cameraFollowsOrbit) {
+        const cameraDistance = camera.position.distanceTo(controls.target)
+        cameraGoal = orbitCameraDirection().multiplyScalar(cameraDistance)
+        camera.position.lerp(cameraGoal, 0.1)
+        controls.target.lerp(targetGoal, 0.1)
       }
       controls.update()
       renderer.render(scene, camera)
@@ -670,14 +943,14 @@ export function SolarMap({
     >
       <div className="map-caption">
         <span className="status-dot" /> Three.js WebGL · J2000 黄道参考系
-        <strong>轨道距离与天体半径均为视觉放大；权威 SI 状态保持不变</strong>
+        <strong>太阳系总览使用视觉压缩；行星与卫星视图采用统一物理比例尺</strong>
         <small className="texture-credit">
           表面 <a href="https://www.solarsystemscope.com/textures/" target="_blank" rel="noreferrer">Solar System Scope / INOVE</a>
           {' · '}星空 <a href="https://svs.gsfc.nasa.gov/4851" target="_blank" rel="noreferrer">NASA SVS / J2000</a>
         </small>
       </div>
-      <div className="map-help">滚轮缩放 · 左键旋转 · 右键平移 · 双击聚焦天体</div>
-      {focusId !== 'sun' && (
+      <div className="map-help">滚轮缩放 · 左键旋转 · 右键平移 · 3D 透视显示远场母天体 · 双击聚焦</div>
+      {focusId !== 'sun' && viewPreset === 'perspective' && (
         <div className="sun-distance-badge">☀ 太阳 · 远场光源 · {solarDistanceAu.toFixed(3)} AU</div>
       )}
       <div className="fps-meter" aria-label="当前 WebGL 帧率">-- FPS</div>
