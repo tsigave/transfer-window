@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js'
-import { bodyById, childrenOf, heliocentricState, localState, type Body } from './model'
+import { bodyById, catalog, heliocentricState, localState, type Body } from './model'
 
 const AU = 149_597_870_700
 const palette: Record<string, number> = {
@@ -66,8 +66,6 @@ interface BodyVisual {
 
 interface ScopeModel {
   focus: Body
-  maxRadius: number
-  global: boolean
   bodies: Body[]
   contextExtent: number
   focusRadiusScene: number
@@ -76,8 +74,11 @@ interface ScopeModel {
 interface OrbitVisual {
   root: THREE.Group
   body: Body
+  pathGeometry: THREE.BufferGeometry
+  nearGeometry: THREE.BufferGeometry
+  sampleCount: number
+  localOffsets: [number, number, number][]
   flowGeometry: THREE.BufferGeometry
-  flowCurve: THREE.CatmullRomCurve3
   flowTrailLength: number
   phaseGap: number
   anchorBodyId?: string
@@ -91,13 +92,15 @@ function bodyColor(body: Body): number {
   return 0x7283ad
 }
 
-function bodyRadius(body: Body, isFocus: boolean, isGlobal: boolean): number {
-  if (isFocus) return body.body_class === 'star' ? 7 : 5.5
-  if (body.body_class === 'star') return 4.5
+function bodyRadius(body: Body, isFocus: boolean, isOverview: boolean): number {
+  if (isFocus && !isOverview) return body.body_class === 'star' ? 7 : 5.5
+  if (body.body_class === 'star') return isOverview ? 0.45 : 4.5
   const physicalHint = Math.log10(Math.max(body.mean_radius_m, 1)) - 3.7
-  if (body.body_class === 'planet') return THREE.MathUtils.clamp(physicalHint, 1.8, 3.6)
-  if (body.body_class === 'dwarf_planet') return isGlobal ? 1.2 : 1.7
-  return isGlobal ? 0.85 : 1.35
+  if (body.body_class === 'planet') {
+    return isOverview ? THREE.MathUtils.clamp(physicalHint * 0.14, 0.24, 0.68) : THREE.MathUtils.clamp(physicalHint, 1.8, 3.6)
+  }
+  if (body.body_class === 'dwarf_planet') return isOverview ? 0.24 : 1.7
+  return isOverview ? 0.16 : 1.35
 }
 
 function createRadialRingGeometry(innerRadius: number, outerRadius: number, segments = 128) {
@@ -149,15 +152,18 @@ const saturnRingUrl = new URL('../assets/textures/saturn_ring.png', import.meta.
 const earthCloudUrl = new URL('../assets/textures/earth_clouds.jpg', import.meta.url).href
 const earthNightUrl = new URL('../assets/textures/earth_nightmap.jpg', import.meta.url).href
 const starfieldUrl = new URL('../assets/textures/starfield-j2000-8k.jpg', import.meta.url).href
-const LOCAL_REFERENCE_RADIUS = 72
-const LOCAL_MAX_CONTEXT_EXTENT = 120_000
+const GLOBAL_REFERENCE_RADIUS = 178
+const GLOBAL_MAX_RADIUS = 70 * AU
+const UNIFIED_SCALE = GLOBAL_REFERENCE_RADIUS / GLOBAL_MAX_RADIUS
 const FOCUS_CAMERA_RADII = 16
-const LOCAL_SUN_RADIUS_BOOST = 1.45
 const LOCAL_SUN_GLOW_MULTIPLIER = 5.2
 const VISUAL_FOCUS_OFFSET_RADII = 3.6
+const SOLAR_OVERVIEW_FRACTION = 0.72
+const OVERVIEW_BODY_SCALE_CAP = 1.8
+const SATELLITE_LABEL_MIN_SCREEN_WIDTH = 0.05
 
-function sunAppearance(distanceAu: number, global: boolean) {
-  if (global) {
+function sunAppearance(distanceAu: number, overview: boolean) {
+  if (overview) {
     return { glowSize: 30, emissiveIntensity: 3.4, lightIntensity: 9.5 }
   }
   const safeDistance = Math.max(distanceAu, 0.2)
@@ -177,23 +183,35 @@ function relativePosition(body: Body, focus: Body, epochTdbMicros: number): [num
   return state.map((value, index) => value - origin[index]) as [number, number, number]
 }
 
-function displayPosition(
-  source: [number, number, number],
-  maxRadius: number,
-  global: boolean,
-): THREE.Vector3 {
+function displayPosition(source: [number, number, number]): THREE.Vector3 {
   const actualRadius = Math.hypot(...source)
   if (actualRadius === 0) return new THREE.Vector3()
-  const multiplier = global
-    ? 178 * Math.log1p(actualRadius / (0.08 * AU))
-      / Math.log1p(maxRadius / (0.08 * AU)) / actualRadius
-    : LOCAL_REFERENCE_RADIUS / maxRadius
+  // A view has exactly one linear scale. Near and far positions, orbit paths,
+  // and inter-body distances therefore retain their physical 1:1 proportions.
+  const multiplier = UNIFIED_SCALE
   // Three.js uses Y as up; the ecliptic X/Y plane becomes the scene X/Z plane.
   return new THREE.Vector3(
     source[0] * multiplier,
     source[2] * multiplier,
     source[1] * multiplier,
   )
+}
+
+function orbitPositionAtPhase(
+  body: Body,
+  phase: number,
+  anchorRelative: [number, number, number],
+): THREE.Vector3 {
+  if (!body.ephemeris) return displayPosition(anchorRelative)
+  const wrappedPhase = ((phase % 1) + 1) % 1
+  const sampleEpoch = body.ephemeris.epoch_tdb_micros
+    + body.ephemeris.orbital_period_s * 1e6 * wrappedPhase
+  const offset = localState(body, sampleEpoch).position_m
+  return displayPosition([
+    anchorRelative[0] + offset[0],
+    anchorRelative[1] + offset[1],
+    anchorRelative[2] + offset[2],
+  ])
 }
 
 function createGlowTexture(): THREE.CanvasTexture {
@@ -418,13 +436,12 @@ export function SolarMap({
     const cloudPhase = Math.random() * Math.PI * 2
     let visuals: BodyVisual[] = []
     let orbitVisuals: OrbitVisual[] = []
+    const orbitByBodyId = new Map<string, OrbitVisual>()
     let scope: ScopeModel = {
       focus: bodyById.get('sun')!,
-      maxRadius: 70 * AU,
-      global: true,
       bodies: [],
       contextExtent: 178,
-      focusRadiusScene: 7,
+      focusRadiusScene: bodyById.get('sun')!.mean_radius_m * UNIFIED_SCALE,
     }
     let cameraGoal = camera.position.clone()
     const targetGoal = new THREE.Vector3()
@@ -436,13 +453,11 @@ export function SolarMap({
       : bodyById.get('sun')
 
     const visualFocusOffset = () => {
-      if (scope.global || viewPresetValueRef.current === 'top') return new THREE.Vector3()
+      if (viewPresetValueRef.current === 'top') return new THREE.Vector3()
       const contextBody = localContextBody()
       if (!contextBody) return new THREE.Vector3()
       const contextPosition = displayPosition(
         relativePosition(contextBody, scope.focus, epochRef.current),
-        scope.maxRadius,
-        false,
       )
       const distance = contextPosition.length()
       if (distance === 0) return contextPosition
@@ -455,80 +470,119 @@ export function SolarMap({
 
     const orbitCameraDirection = () => {
       const contextBody = localContextBody()
-      if (!contextBody) return new THREE.Vector3(0.52, 0.46, 0.78).normalize()
+      if (!contextBody || contextBody.id === scope.focus.id) {
+        return new THREE.Vector3(0.52, 0.46, 0.78).normalize()
+      }
       const contextDirection = displayPosition(
         relativePosition(contextBody, scope.focus, epochRef.current),
-        scope.maxRadius,
-        false,
       ).normalize()
       contextDirection.multiplyScalar(-1)
       contextDirection.y += 0.12
       return contextDirection.normalize()
     }
 
-    const isRemoteContextBody = (body: Body) => !scope.global && (
-      body.id === 'sun'
-      || (scope.focus.body_class === 'moon' && body.id === scope.focus.parent_id)
+    const overviewDistance = () => Math.max(
+      0.01,
+      scope.contextExtent * SOLAR_OVERVIEW_FRACTION,
+    )
+
+    const isSolarOverview = () => camera.position.distanceTo(controls.target) >= overviewDistance()
+
+    const overviewProgress = () => THREE.MathUtils.smoothstep(
+      camera.position.distanceTo(controls.target),
+      overviewDistance() * 0.8,
+      overviewDistance() * 1.25,
+    )
+
+    const isBodyVisible = (body: Body, overview = isSolarOverview()) => !(
+      overview && body.body_class === 'moon' && body.id !== 'moon'
     )
 
     const setCameraPreset = (preset: 'perspective' | 'top') => {
+      const minimumCameraDistance = Math.max(scope.focusRadiusScene * 6, 0.0000001)
       const fittedDistance = THREE.MathUtils.clamp(
         scope.focusRadiusScene * FOCUS_CAMERA_RADII,
-        0.01,
+        minimumCameraDistance,
         120,
       )
-      const distance = scope.global
-        ? 248
+      const distance = scope.focus.id === 'sun'
+        ? Math.max(scope.contextExtent * 1.45, 120)
         : fittedDistance
       if (preset === 'top') {
         cameraGoal = new THREE.Vector3(0.01, distance, 0.01)
-      } else if (!scope.global) {
-        cameraGoal = orbitCameraDirection().multiplyScalar(distance)
       } else {
-        cameraGoal = new THREE.Vector3(distance * 0.52, distance * 0.46, distance * 0.78)
+        cameraGoal = orbitCameraDirection().multiplyScalar(distance)
       }
       targetGoal.set(0, 0, 0)
-      camera.near = scope.global ? 0.1 : Math.max(0.000001, distance / 200_000)
+      camera.near = Math.max(0.000000000001, distance / 20_000_000)
       camera.far = Math.max(2_500, scope.contextExtent * 12, distance * 12)
       camera.updateProjectionMatrix()
-      controls.minDistance = scope.global ? 9 : Math.max(scope.focusRadiusScene * 2.4, 0.0001)
+      controls.minDistance = Math.max(scope.focusRadiusScene * 2.4, 0.000000001)
       controls.maxDistance = Math.max(520, scope.contextExtent * 6)
       camera.position.copy(cameraGoal)
       controls.target.copy(targetGoal)
       cameraTransition = false
-      cameraFollowsOrbit = !scope.global && preset === 'perspective'
+      cameraFollowsOrbit = scope.focus.id !== 'sun' && preset === 'perspective'
       controls.update()
-      const showRemoteContext = preset === 'perspective'
+      const overview = isSolarOverview()
       for (const visual of visuals) {
-        const visible = showRemoteContext || !isRemoteContextBody(visual.body)
+        const visible = isBodyVisible(visual.body, overview)
         visual.root.visible = visible
         visual.labelObject.visible = visible
+      }
+      for (const orbit of orbitVisuals) {
+        orbit.root.visible = isBodyVisible(orbit.body, overview)
       }
     }
 
     const buildOrbit = (body: Body, anchorBodyId?: string) => {
       if (!body.ephemeris) return
+      const isContextOrbit = scope.focus.body_class === 'moon'
+        && body.id === scope.focus.parent_id
+      const isEmphasizedOrbit = body.id === scope.focus.id || isContextOrbit
       const points: THREE.Vector3[] = []
-      const samples = 192
+      const localOffsets: [number, number, number][] = []
+      const samples = isEmphasizedOrbit
+        ? 1536
+        : body.body_class === 'planet' || body.body_class === 'dwarf_planet'
+          ? 1024
+          : body.body_class === 'moon' ? 640 : 512
+      const anchor = anchorBodyId ? bodyById.get(anchorBodyId) : undefined
+      const anchorRelative = anchor
+        ? relativePosition(anchor, scope.focus, epochRef.current)
+        : [0, 0, 0] as [number, number, number]
       for (let index = 0; index <= samples; index += 1) {
         const sampleEpoch = body.ephemeris.epoch_tdb_micros
           + body.ephemeris.orbital_period_s * 1e6 * index / samples
-        points.push(displayPosition(localState(body, sampleEpoch).position_m, scope.maxRadius, scope.global))
+        const offset = localState(body, sampleEpoch).position_m
+        localOffsets.push(offset)
+        points.push(displayPosition([
+          anchorRelative[0] + offset[0],
+          anchorRelative[1] + offset[1],
+          anchorRelative[2] + offset[2],
+        ]))
       }
       const geometry = new THREE.BufferGeometry().setFromPoints(points)
       const material = new THREE.LineBasicMaterial({
-        color: body.id === scope.focus.id
-          ? 0x62502e
+        color: isEmphasizedOrbit
+          ? 0x8c713a
           : body.body_class === 'planet' ? 0x41666c : 0x31494e,
         transparent: true,
-        opacity: body.id === scope.focus.id ? 0.34 : scope.global ? 0.28 : 0.4,
+        opacity: isEmphasizedOrbit ? 0.58 : 0.32,
       })
       const line = new THREE.Line(geometry, material)
+      line.frustumCulled = false
+      const nearGeometry = new THREE.BufferGeometry()
+      nearGeometry.setAttribute(
+        'position',
+        new THREE.BufferAttribute(new Float32Array(65 * 3), 3),
+      )
+      const nearLine = new THREE.Line(nearGeometry, material)
+      nearLine.frustumCulled = false
+      nearLine.renderOrder = 1
       const orbitRoot = new THREE.Group()
-      orbitRoot.add(line)
-      const flowCurve = new THREE.CatmullRomCurve3(points.slice(0, -1), true, 'centripetal')
-      const isFocusedOrbit = body.id === scope.focus.id
-      const flowPointCount = isFocusedOrbit ? 26 : 12
+      orbitRoot.add(line, nearLine)
+      const flowPointCount = isEmphasizedOrbit ? 26 : 12
       const flowGeometry = new THREE.BufferGeometry()
       flowGeometry.setAttribute(
         'position',
@@ -545,9 +599,9 @@ export function SolarMap({
         ),
       )
       const flowMaterial = createOrbitFlowMaterial(
-        isFocusedOrbit ? 0xffc96b : 0x64d4ca,
-        isFocusedOrbit ? 0.92 : 0.5,
-        isFocusedOrbit ? 7.2 : 4.2,
+        isEmphasizedOrbit ? 0xffc96b : 0x64d4ca,
+        isEmphasizedOrbit ? 0.92 : 0.5,
+        isEmphasizedOrbit ? 7.2 : 4.2,
       )
       const flowTrail = new THREE.Points(flowGeometry, flowMaterial)
       // The point positions move around the full orbit every frame, so their
@@ -559,95 +613,64 @@ export function SolarMap({
       for (let index = 1; index < points.length; index += 1) {
         orbitLength += points[index].distanceTo(points[index - 1])
       }
-      const desiredTrailLength = scope.focusRadiusScene * (isFocusedOrbit ? 10 : 6)
+      const desiredTrailLength = scope.focusRadiusScene * (isEmphasizedOrbit ? 10 : 6)
       const flowTrailLength = THREE.MathUtils.clamp(
         desiredTrailLength / Math.max(orbitLength, 0.0001),
         0.00004,
-        scope.global ? 0.018 : 0.03,
+        0.03,
       )
       const phaseGap = THREE.MathUtils.clamp(
-        scope.focusRadiusScene * (isFocusedOrbit ? 0.8 : 0.5) / Math.max(orbitLength, 0.0001),
+        scope.focusRadiusScene * (isEmphasizedOrbit ? 0.8 : 0.5) / Math.max(orbitLength, 0.0001),
         0.00002,
-        scope.global ? 0.002 : 0.004,
+        0.004,
       )
       scopeGroup.add(orbitRoot)
       orbitVisuals.push({
         root: orbitRoot,
         body,
+        pathGeometry: geometry,
+        nearGeometry,
+        sampleCount: samples,
+        localOffsets,
         flowGeometry,
-        flowCurve,
         flowTrailLength,
         phaseGap,
         anchorBodyId,
       })
+      orbitByBodyId.set(body.id, orbitVisuals[orbitVisuals.length - 1])
     }
 
     const buildScope = (nextFocusId: string) => {
       disposeGroup(scopeGroup)
       visuals = []
       orbitVisuals = []
+      orbitByBodyId.clear()
       const focus = bodyById.get(nextFocusId) ?? bodyById.get('sun')!
-      const children = childrenOf(focus.id)
-      const global = focus.id === 'sun'
-      const focusOrbitRadius = focus.body_class === 'moon' && focus.ephemeris
-        ? focus.ephemeris.semi_major_axis_m * (1 + focus.ephemeris.eccentricity)
-        : 0
-      const minimumLocalRadius = focus.mean_radius_m * 40
       const sun = bodyById.get('sun')!
-      const parent = focus.parent_id ? bodyById.get(focus.parent_id) : undefined
-      const localBodies = [sun, parent, focus, ...children]
-        .filter((body): body is Body => Boolean(body))
-        .filter((body, index, bodies) => bodies.findIndex((candidate) => candidate.id === body.id) === index)
-      const referenceRadius = Math.max(
-        ...children.map((body) => body.ephemeris
-          ? body.ephemeris.semi_major_axis_m * (1 + body.ephemeris.eccentricity)
-          : 1),
-        global ? 70 * AU : focusOrbitRadius,
-        global ? 1 : minimumLocalRadius,
-      )
-      const bodies = global ? [focus, ...children] : localBodies
-      const physicalBodyExtent = global ? 0 : Math.max(...bodies.map((body) => (
-        Math.hypot(...relativePosition(body, focus, epochRef.current)) + body.mean_radius_m
-      )))
-      const physicalParentDistance = !global && parent
-        ? Math.hypot(...relativePosition(parent, focus, epochRef.current))
-        : 0
-      const physicalFocusOrbitExtent = !global && focus.ephemeris
-        ? physicalParentDistance + focus.ephemeris.semi_major_axis_m * (1 + focus.ephemeris.eccentricity)
-        : 0
-      // One linear scale is shared by every local distance and radius. Only the
-      // overall normalization is capped so very small KBOs do not create 1e9-unit scenes.
-      const safeContextReference = Math.max(physicalBodyExtent, physicalFocusOrbitExtent)
-        * LOCAL_REFERENCE_RADIUS / LOCAL_MAX_CONTEXT_EXTENT
-      const maxRadius = global ? referenceRadius : Math.max(referenceRadius, safeContextReference)
-      const localScale = LOCAL_REFERENCE_RADIUS / maxRadius
-      const focusRadiusScene = global ? bodyRadius(focus, true, true) : focus.mean_radius_m * localScale
-      const bodyExtent = global ? 178 : Math.max(...bodies.map((body) => {
-        const distance = Math.hypot(...relativePosition(body, focus, epochRef.current)) * localScale
-        return distance + body.mean_radius_m * localScale
+      // All focus targets share the same catalog, epoch, coordinates and scale.
+      // Focusing only rebases the origin to preserve close-range precision.
+      const bodies = catalog.bodies
+      const physicalFocusRadius = focus.mean_radius_m * UNIFIED_SCALE
+      const focusRadiusScene = physicalFocusRadius
+      const bodyExtent = Math.max(...bodies.map((body) => {
+        const relative = relativePosition(body, focus, epochRef.current)
+        return displayPosition(relative).length() + body.mean_radius_m * UNIFIED_SCALE
       }))
-      const parentDistance = !global && focus.parent_id
-        ? Math.hypot(...relativePosition(bodyById.get(focus.parent_id)!, focus, epochRef.current)) * localScale
-        : 0
-      const focusOrbitExtent = !global && focus.ephemeris
-        ? parentDistance + focus.ephemeris.semi_major_axis_m * (1 + focus.ephemeris.eccentricity) * localScale
-        : 0
       scope = {
         focus,
-        maxRadius,
-        global,
         bodies,
-        contextExtent: Math.max(bodyExtent, focusOrbitExtent, LOCAL_REFERENCE_RADIUS),
+        contextExtent: Math.max(bodyExtent * 1.15, GLOBAL_REFERENCE_RADIUS),
         focusRadiusScene,
       }
-      sceneFog.density = global ? 0.00125 : 0
+      sceneFog.density = 0
 
-      if (!global && focus.ephemeris && focus.parent_id) buildOrbit(focus, focus.parent_id)
-      children.forEach((body) => buildOrbit(body))
+      for (const body of catalog.bodies) {
+        if (body.ephemeris && body.parent_id) buildOrbit(body, body.parent_id)
+      }
 
       for (const body of scope.bodies) {
         const isFocus = body.id === focus.id
-        const radius = bodyRadius(body, isFocus, global)
+        const radius = bodyRadius(body, isFocus, false)
         const surfaceTexture = planetTextures.get(body.id) ?? null
         const material = new THREE.MeshStandardMaterial({
           color: surfaceTexture ? 0xffffff : bodyColor(body),
@@ -764,7 +787,7 @@ export function SolarMap({
           }))
           const appearance = sunAppearance(
             Math.hypot(...relativePosition(sun, focus, epochRef.current)) / AU,
-            global,
+            false,
           )
           glow.scale.set(appearance.glowSize, appearance.glowSize, 1)
           root.add(glow)
@@ -773,6 +796,19 @@ export function SolarMap({
         const label = document.createElement('div')
         label.className = 'three-label'
         label.innerHTML = `<b>${body.localized_name_zh}</b><span>${body.canonical_name}</span>`
+        label.setAttribute('role', 'button')
+        label.setAttribute('aria-label', `聚焦${body.localized_name_zh}`)
+        label.tabIndex = 0
+        label.addEventListener('click', (event) => {
+          event.stopPropagation()
+          onFocusRef.current(body.id)
+        })
+        label.addEventListener('keydown', (event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return
+          event.preventDefault()
+          event.stopPropagation()
+          onFocusRef.current(body.id)
+        })
         const labelObject = new CSS2DObject(label)
         scopeGroup.add(labelObject)
 
@@ -815,7 +851,10 @@ export function SolarMap({
       pointer.x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1
       pointer.y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1
       raycaster.setFromCamera(pointer, camera)
-      const hit = raycaster.intersectObjects(visuals.map((visual) => visual.mesh), false)[0]
+      const hit = raycaster.intersectObjects(
+        visuals.filter((visual) => visual.root.visible).map((visual) => visual.mesh),
+        false,
+      )[0]
       return hit?.object.userData.bodyId as string | null ?? null
     }
     const handlePointerDown = (event: PointerEvent) => {
@@ -851,6 +890,27 @@ export function SolarMap({
     resize()
     buildScope(focusId)
 
+    const projectedWorldPoint = new THREE.Vector3()
+    const cameraSpacePoint = new THREE.Vector3()
+    const orbitScreenWidthFraction = (orbit: OrbitVisual) => {
+      const positions = orbit.pathGeometry.getAttribute('position') as THREE.BufferAttribute
+      const stride = Math.max(1, Math.floor((positions.count - 1) / 48))
+      let minimumX = Number.POSITIVE_INFINITY
+      let maximumX = Number.NEGATIVE_INFINITY
+      for (let index = 0; index < positions.count; index += stride) {
+        projectedWorldPoint.fromBufferAttribute(positions, index).add(orbit.root.position)
+        cameraSpacePoint.copy(projectedWorldPoint).applyMatrix4(camera.matrixWorldInverse)
+        if (cameraSpacePoint.z >= -camera.near) continue
+        projectedWorldPoint.project(camera)
+        if (!Number.isFinite(projectedWorldPoint.x)) continue
+        minimumX = Math.min(minimumX, projectedWorldPoint.x)
+        maximumX = Math.max(maximumX, projectedWorldPoint.x)
+      }
+      if (!Number.isFinite(minimumX) || !Number.isFinite(maximumX)) return 0
+      // NDC spans -1..1, so half of the NDC width is the viewport fraction.
+      return Math.max(0, (maximumX - minimumX) / 2)
+    }
+
     let animationFrame = 0
     let previousFrame = performance.now()
     let performanceWindowStart = previousFrame
@@ -864,20 +924,47 @@ export function SolarMap({
       }
 
       const frameOffset = visualFocusOffset()
+      const overview = isSolarOverview()
+      const overviewBlend = overviewProgress()
       for (const orbit of orbitVisuals) {
+        const visible = isBodyVisible(orbit.body, overview)
+        orbit.root.visible = visible
+        // Hidden satellite systems are not updated in overview mode; they catch
+        // up from the shared epoch on the first detailed frame after zooming in.
+        if (!visible) continue
         const anchor = orbit.anchorBodyId ? bodyById.get(orbit.anchorBodyId) : undefined
-        const anchorPosition = anchor
-          ? displayPosition(
-            relativePosition(anchor, scope.focus, epochRef.current),
-            scope.maxRadius,
-            scope.global,
-          )
-          : new THREE.Vector3()
-        orbit.root.position.copy(anchorPosition.sub(frameOffset))
+        const anchorRelative = anchor
+          ? relativePosition(anchor, scope.focus, epochRef.current)
+          : [0, 0, 0] as [number, number, number]
+        const pathPositions = orbit.pathGeometry.getAttribute('position') as THREE.BufferAttribute
+        for (let index = 0; index < orbit.localOffsets.length; index += 1) {
+          const offset = orbit.localOffsets[index]
+          const point = displayPosition([
+            anchorRelative[0] + offset[0],
+            anchorRelative[1] + offset[1],
+            anchorRelative[2] + offset[2],
+          ])
+          pathPositions.setXYZ(index, point.x, point.y, point.z)
+        }
+        pathPositions.needsUpdate = true
+        orbit.root.position.copy(frameOffset).multiplyScalar(-1)
         if (orbit.body.ephemeris) {
           const elapsedPeriods = (epochRef.current - orbit.body.ephemeris.epoch_tdb_micros)
             / (orbit.body.ephemeris.orbital_period_s * 1e6)
           const phase = ((elapsedPeriods % 1) + 1) % 1
+          // Overlay a dense analytic arc around the body's exact current phase.
+          // Its center vertex is the body's Kepler position, eliminating the
+          // visible gap or jump caused by a coarse full-orbit polygon.
+          const nearPositions = orbit.nearGeometry.getAttribute('position') as THREE.BufferAttribute
+          const nearSpan = 4 / orbit.sampleCount
+          const nearLastPoint = Math.max(nearPositions.count - 1, 1)
+          for (let index = 0; index < nearPositions.count; index += 1) {
+            const offsetPhase = (index / nearLastPoint - 0.5) * nearSpan
+            const point = orbitPositionAtPhase(orbit.body, phase + offsetPhase, anchorRelative)
+            nearPositions.setXYZ(index, point.x, point.y, point.z)
+          }
+          nearPositions.needsUpdate = true
+
           const positions = orbit.flowGeometry.getAttribute('position') as THREE.BufferAttribute
           const lastPoint = Math.max(positions.count - 1, 1)
           for (let index = 0; index < positions.count; index += 1) {
@@ -887,7 +974,9 @@ export function SolarMap({
             const samplePhase = (
               phase - orbit.phaseGap - orbit.flowTrailLength * (1 - progress) + 1
             ) % 1
-            const point = orbit.flowCurve.getPoint(samplePhase)
+            // Flow points come straight from the Kepler solver rather than a
+            // polygon spline, so accelerated playback cannot hop between edges.
+            const point = orbitPositionAtPhase(orbit.body, samplePhase, anchorRelative)
             positions.setXYZ(index, point.x, point.y, point.z)
           }
           positions.needsUpdate = true
@@ -895,25 +984,41 @@ export function SolarMap({
       }
 
       for (const visual of visuals) {
+        const visible = isBodyVisible(visual.body, overview)
+        visual.root.visible = visible
+        visual.labelObject.visible = visible
+        if (!visible) continue
         const relative = relativePosition(visual.body, scope.focus, epochRef.current)
-        const nextPosition = displayPosition(relative, scope.maxRadius, scope.global).sub(frameOffset)
+        const nextPosition = displayPosition(relative).sub(frameOffset)
         visual.root.position.copy(nextPosition)
         visual.labelObject.position.copy(nextPosition)
-        const physicalRadius = visual.body.mean_radius_m * LOCAL_REFERENCE_RADIUS / scope.maxRadius
-        const renderedRadius = !scope.global && visual.body.id === 'sun'
-          ? physicalRadius * LOCAL_SUN_RADIUS_BOOST
+        const physicalRadius = visual.body.mean_radius_m * UNIFIED_SCALE
+        const overviewRadiusCap = visual.body.body_class === 'star'
+          ? 0.65
+          : visual.body.body_class === 'planet' ? 0.5
+            : visual.body.body_class === 'moon' ? 0.3 : 0.32
+        const overviewRadius = Math.min(
+          bodyRadius(visual.body, false, true) * OVERVIEW_BODY_SCALE_CAP,
+          overviewRadiusCap,
+        )
+        const canEnlargeInOverview = visual.body.body_class === 'planet'
+          || visual.body.body_class === 'dwarf_planet'
+        const renderedRadius = canEnlargeInOverview
+          ? THREE.MathUtils.lerp(
+            physicalRadius,
+            Math.max(physicalRadius, overviewRadius),
+            overviewBlend,
+          )
           : physicalRadius
-        const radiusScale = scope.global ? 1 : renderedRadius / visual.baseRadius
+        const radiusScale = renderedRadius / visual.baseRadius
         visual.axisGroup.scale.setScalar(radiusScale)
         if (visual.body.id === 'sun') {
           sunWorldPosition.copy(nextPosition)
           sunlight.position.copy(nextPosition)
-          const appearance = sunAppearance(Math.hypot(...relative) / AU, scope.global)
+          const appearance = sunAppearance(Math.hypot(...relative) / AU, overview)
           visual.material.emissiveIntensity = appearance.emissiveIntensity
           sunlight.intensity = appearance.lightIntensity
-          const glowSize = scope.global
-            ? appearance.glowSize
-            : renderedRadius * LOCAL_SUN_GLOW_MULTIPLIER
+          const glowSize = renderedRadius * LOCAL_SUN_GLOW_MULTIPLIER
           visual.glow?.scale.set(glowSize, glowSize, 1)
         }
         if (visual.body.rotation_period_s) {
@@ -929,7 +1034,7 @@ export function SolarMap({
         const selected = visual.body.id === selectedRef.current
         visual.material.emissive.setHex(visual.body.body_class === 'star' ? 0xffffff : 0x000000)
         visual.label.classList.toggle('selected', selected)
-        visual.label.classList.toggle('minor', scope.global
+        visual.label.classList.toggle('minor', overview
           && visual.body.body_class !== 'planet'
           && visual.body.body_class !== 'star'
           && !selected)
@@ -946,6 +1051,14 @@ export function SolarMap({
         controls.target.lerp(targetGoal, 0.1)
       }
       controls.update()
+      camera.updateMatrixWorld()
+      for (const visual of visuals) {
+        if (visual.body.body_class !== 'moon' || !visual.root.visible) continue
+        const orbit = orbitByBodyId.get(visual.body.id)
+        visual.labelObject.visible = Boolean(
+          orbit && orbitScreenWidthFraction(orbit) > SATELLITE_LABEL_MIN_SCREEN_WIDTH,
+        )
+      }
       renderer.render(scene, camera)
       labelRenderer.render(scene, camera)
       performanceFrames += 1
@@ -986,13 +1099,13 @@ export function SolarMap({
     >
       <div className="map-caption">
         <span className="status-dot" /> Three.js WebGL · J2000 黄道参考系
-        <strong>太阳系总览使用视觉压缩；行星与卫星视图采用统一物理比例尺</strong>
+        <strong>同一实时星系 · 聚焦保持真实尺寸 · 仅太阳系总览有限放大行星</strong>
         <small className="texture-credit">
           表面 <a href="https://www.solarsystemscope.com/textures/" target="_blank" rel="noreferrer">Solar System Scope / INOVE</a>
           {' · '}星空 <a href="https://svs.gsfc.nasa.gov/4851" target="_blank" rel="noreferrer">NASA SVS / J2000</a>
         </small>
       </div>
-      <div className="map-help">滚轮缩放 · 左键旋转 · 右键平移 · 3D 透视显示远场母天体 · 双击聚焦</div>
+      <div className="map-help">滚轮缩放 · 左键旋转 · 右键平移 · 总览仅保留月球卫星 · 双击聚焦</div>
       {focusId !== 'sun' && viewPreset === 'perspective' && (
         <div className="sun-distance-badge">☀ 太阳 · 远场光源 · {solarDistanceAu.toFixed(3)} AU</div>
       )}

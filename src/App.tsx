@@ -173,10 +173,10 @@ export default function App() {
       <section className="map-panel">
         <div className="map-toolbar">
           <div className="toolbar-group scope-tools">
-            <button className={focusId === 'sun' ? 'active' : ''} onClick={() => setFocusId('sun')}>太阳系</button>
+            <button className={focusId === 'sun' ? 'active' : ''} onClick={() => setFocusId('sun')}>☀ 聚焦太阳</button>
             <button onClick={() => focusBody(selected.id)}>◎ 聚焦所选天体</button>
             <button onClick={goUpOneLevel} disabled={focusId === 'sun'}>↰ 上一级</button>
-            <span className="scope-readout">当前：{bodyById.get(focusId)?.localized_name_zh ?? '太阳'}视图</span>
+            <span className="scope-readout">观察原点：{bodyById.get(focusId)?.localized_name_zh ?? '太阳'}</span>
           </div>
           <div className="toolbar-group camera-tools">
             <button className={viewPreset === 'perspective' ? 'active' : ''} onClick={() => setViewPreset('perspective')}>3D 透视</button>
