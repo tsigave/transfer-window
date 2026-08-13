@@ -17,6 +17,10 @@ function shiftCalendarYears(epochTdbMicros: number, years: number): number {
   return epochFromDate(date)
 }
 
+function scopeForBody(body: Body): string {
+  return body.body_class === 'moon' ? body.parent_id ?? 'sun' : body.id
+}
+
 function TreeBranch({ body, selectedId, onSelect }: { body: Body; selectedId: string; onSelect: (id: string) => void }) {
   const children = childrenOf(body.id)
   return (
@@ -85,7 +89,7 @@ export default function App() {
     const body = bodyById.get(id)
     if (!body) return
     setSelectedId(id)
-    setFocusId(childrenOf(body.id).length > 0 ? body.id : body.parent_id ?? 'sun')
+    setFocusId(scopeForBody(body))
     setQuery('')
   }
 
@@ -93,7 +97,7 @@ export default function App() {
     const body = bodyById.get(id)
     if (!body) return
     setSelectedId(id)
-    setFocusId(childrenOf(body.id).length > 0 ? body.id : body.parent_id ?? 'sun')
+    setFocusId(scopeForBody(body))
   }
 
   function goUpOneLevel() {
@@ -158,7 +162,7 @@ export default function App() {
             {results.map((body) => <button key={body.id} onClick={() => locate(body.id)}><b>{body.localized_name_zh}</b><span>{body.canonical_name}</span><code>{body.id}</code></button>)}
           </div>
         ) : (
-          <nav className="tree" aria-label="天体层级"><ul>{childrenOf(null).map((body) => <TreeBranch key={body.id} body={body} selectedId={selectedId} onSelect={setSelectedId} />)}</ul></nav>
+          <nav className="tree" aria-label="天体层级"><ul>{childrenOf(null).map((body) => <TreeBranch key={body.id} body={body} selectedId={selectedId} onSelect={locate} />)}</ul></nav>
         )}
         <div className="regions">
           <small>统计区域 · 非独立天体</small>

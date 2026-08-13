@@ -18,6 +18,22 @@ const palette: Record<string, number> = {
   moon: 0xb9c1c4,
 }
 
+// Rotation-axis inclination to each body's orbital plane (degrees).
+// Major-planet values follow NASA's planetary reference table.
+const axialTiltDegrees: Record<string, number> = {
+  sun: 7.25,
+  mercury: 0.034,
+  venus: 177.36,
+  earth: 23.44,
+  moon: 6.68,
+  mars: 25.19,
+  jupiter: 3.13,
+  saturn: 26.73,
+  uranus: 97.77,
+  neptune: 28.32,
+  pluto: 119.61,
+}
+
 export interface CameraAction {
   id: number
   type: 'zoom-in' | 'zoom-out' | 'reset'
@@ -36,8 +52,11 @@ interface Props {
 
 interface BodyVisual {
   body: Body
+  root: THREE.Group
   mesh: THREE.Mesh<THREE.SphereGeometry, THREE.MeshStandardMaterial>
   material: THREE.MeshStandardMaterial
+  cloudMesh?: THREE.Mesh<THREE.SphereGeometry, THREE.MeshStandardMaterial>
+  nightMesh?: THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMaterial>
   labelObject: CSS2DObject
   label: HTMLDivElement
   selectionHalo: THREE.Sprite
@@ -81,6 +100,8 @@ const textureUrls: Record<string, string> = {
 }
 
 const saturnRingUrl = new URL('../assets/textures/saturn_ring.png', import.meta.url).href
+const earthCloudUrl = new URL('../assets/textures/earth_clouds.jpg', import.meta.url).href
+const earthNightUrl = new URL('../assets/textures/earth_nightmap.jpg', import.meta.url).href
 
 function relativePosition(body: Body, focus: Body, epochTdbMicros: number): [number, number, number] {
   if (body.id === focus.id) return [0, 0, 0]
@@ -137,6 +158,44 @@ function createSelectionTexture(): THREE.CanvasTexture {
   return new THREE.CanvasTexture(canvas)
 }
 
+function createNightLightsMaterial(nightMap: THREE.Texture, sunPosition: THREE.Vector3): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      nightMap: { value: nightMap },
+      sunPosition: { value: sunPosition },
+    },
+    vertexShader: `
+      varying vec2 vUv;
+      varying vec3 vWorldNormal;
+      varying vec3 vWorldPosition;
+      void main() {
+        vUv = uv;
+        vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+        vWorldPosition = worldPosition.xyz;
+        vWorldNormal = normalize(mat3(modelMatrix) * normal);
+        gl_Position = projectionMatrix * viewMatrix * worldPosition;
+      }
+    `,
+    fragmentShader: `
+      uniform sampler2D nightMap;
+      uniform vec3 sunPosition;
+      varying vec2 vUv;
+      varying vec3 vWorldNormal;
+      varying vec3 vWorldPosition;
+      void main() {
+        vec3 toSun = normalize(sunPosition - vWorldPosition);
+        float solarFacing = dot(normalize(vWorldNormal), toSun);
+        float night = 1.0 - smoothstep(-0.18, 0.05, solarFacing);
+        vec3 lights = max(texture2D(nightMap, vUv).rgb - vec3(0.012), vec3(0.0));
+        gl_FragColor = vec4(lights * night * 12.0, night);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  })
+}
+
 function createStarField(): THREE.Points {
   const points: number[] = []
   let seed = 0x2160
@@ -185,6 +244,10 @@ export function SolarMap({
   onSelect,
   onFocus,
 }: Props) {
+  const focusBody = bodyById.get(focusId) ?? bodyById.get('sun')!
+  const solarDistanceAu = focusBody.id === 'sun'
+    ? 0
+    : Math.hypot(...heliocentricState(focusBody, epochTdbMicros).position_m) / AU
   const containerRef = useRef<HTMLDivElement>(null)
   const epochRef = useRef(epochTdbMicros)
   const timeRateRef = useRef(timeRate)
@@ -216,13 +279,13 @@ export function SolarMap({
     scene.background = new THREE.Color(0x050d10)
     scene.fog = new THREE.FogExp2(0x050d10, 0.00125)
 
-    const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 1_500)
+    const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 2_500)
     camera.position.set(0, 118, 228)
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' })
     renderer.outputColorSpace = THREE.SRGBColorSpace
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.toneMappingExposure = 1.08
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5))
     renderer.domElement.className = 'three-canvas'
     container.appendChild(renderer.domElement)
 
@@ -240,13 +303,9 @@ export function SolarMap({
     controls.maxDistance = 520
     controls.target.set(0, 0, 0)
 
-    scene.add(new THREE.AmbientLight(0x77919b, 0.74))
-    const keyLight = new THREE.DirectionalLight(0xdbeaf0, 2.6)
-    keyLight.position.set(-90, 120, 100)
-    scene.add(keyLight)
-    const rimLight = new THREE.DirectionalLight(0x4aa9bb, 1.25)
-    rimLight.position.set(130, -30, -100)
-    scene.add(rimLight)
+    scene.add(new THREE.AmbientLight(0x71808a, 0.22))
+    const sunlight = new THREE.PointLight(0xfff1d1, 9.5, 0, 0)
+    scene.add(sunlight)
     scene.add(createStarField())
 
     const scopeGroup = new THREE.Group()
@@ -266,8 +325,19 @@ export function SolarMap({
     saturnRingTexture.colorSpace = THREE.SRGBColorSpace
     saturnRingTexture.anisotropy = Math.min(maxAnisotropy, 8)
     loadedTextures.push(saturnRingTexture)
+    const earthCloudTexture = textureLoader.load(earthCloudUrl)
+    earthCloudTexture.anisotropy = Math.min(maxAnisotropy, 8)
+    loadedTextures.push(earthCloudTexture)
+    const earthNightTexture = textureLoader.load(earthNightUrl)
+    earthNightTexture.colorSpace = THREE.SRGBColorSpace
+    earthNightTexture.anisotropy = Math.min(maxAnisotropy, 8)
+    loadedTextures.push(earthNightTexture)
+    const glowTexture = createGlowTexture()
+    loadedTextures.push(glowTexture)
     const selectionTexture = createSelectionTexture()
     loadedTextures.push(selectionTexture)
+    const sunWorldPosition = new THREE.Vector3()
+    const cloudPhase = Math.random() * Math.PI * 2
     let visuals: BodyVisual[] = []
     let scope: ScopeModel = {
       focus: bodyById.get('sun')!,
@@ -322,7 +392,6 @@ export function SolarMap({
       scope = { focus, maxRadius, global, bodies: global ? [focus, ...children] : [sun, focus, ...children] }
 
       children.forEach(buildOrbit)
-      const glowTexture = focus.id === 'sun' ? createGlowTexture() : null
 
       for (const body of scope.bodies) {
         const isFocus = body.id === focus.id
@@ -338,7 +407,35 @@ export function SolarMap({
         })
         const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, 40, 28), material)
         mesh.userData.bodyId = body.id
-        scopeGroup.add(mesh)
+        const root = new THREE.Group()
+        const axisGroup = new THREE.Group()
+        axisGroup.rotation.z = THREE.MathUtils.degToRad(axialTiltDegrees[body.id] ?? 0)
+        root.add(axisGroup)
+        axisGroup.add(mesh)
+        scopeGroup.add(root)
+
+        let cloudMesh: BodyVisual['cloudMesh']
+        let nightMesh: BodyVisual['nightMesh']
+        if (body.id === 'earth') {
+          nightMesh = new THREE.Mesh(
+            new THREE.SphereGeometry(radius * 1.006, 48, 32),
+            createNightLightsMaterial(earthNightTexture, sunWorldPosition),
+          )
+          axisGroup.add(nightMesh)
+          cloudMesh = new THREE.Mesh(
+            new THREE.SphereGeometry(radius * 1.018, 48, 32),
+            new THREE.MeshStandardMaterial({
+              color: 0xf4fbff,
+              alphaMap: earthCloudTexture,
+              transparent: true,
+              opacity: 0.68,
+              roughness: 0.96,
+              metalness: 0,
+              depthWrite: false,
+            }),
+          )
+          axisGroup.add(cloudMesh)
+        }
 
         if (body.id === 'saturn') {
           const ring = new THREE.Mesh(
@@ -353,12 +450,11 @@ export function SolarMap({
               roughness: 0.85,
             }),
           )
-          ring.rotation.x = Math.PI / 2.2
-          ring.rotation.z = 0.35
-          mesh.add(ring)
+          ring.rotation.x = Math.PI / 2
+          axisGroup.add(ring)
         }
 
-        if (body.id === 'sun' && glowTexture) {
+        if (body.id === 'sun') {
           const glow = new THREE.Sprite(new THREE.SpriteMaterial({
             map: glowTexture,
             color: 0xffb044,
@@ -366,10 +462,9 @@ export function SolarMap({
             depthWrite: false,
             blending: THREE.AdditiveBlending,
           }))
-          glow.scale.set(30, 30, 1)
-          mesh.add(glow)
-          const sunlight = new THREE.PointLight(0xffd9a0, 6.5, 440, 1.2)
-          mesh.add(sunlight)
+          const glowSize = global ? 30 : 22
+          glow.scale.set(glowSize, glowSize, 1)
+          root.add(glow)
         }
 
         const label = document.createElement('div')
@@ -386,8 +481,8 @@ export function SolarMap({
         }))
         selectionHalo.scale.set(radius * 3.1, radius * 3.1, 1)
         selectionHalo.visible = body.id === selectedRef.current
-        mesh.add(selectionHalo)
-        visuals.push({ body, mesh, material, labelObject, label, selectionHalo })
+        root.add(selectionHalo)
+        visuals.push({ body, root, mesh, material, cloudMesh, nightMesh, labelObject, label, selectionHalo })
       }
       setCameraPreset(viewPresetValueRef.current)
     }
@@ -462,25 +557,29 @@ export function SolarMap({
       for (const visual of visuals) {
         const relative = relativePosition(visual.body, scope.focus, epochRef.current)
         const nextPosition = !scope.global && visual.body.id === 'sun'
-          ? displayPosition(relative, Math.hypot(...relative), false).normalize().multiplyScalar(76)
+          ? displayPosition(relative, Math.hypot(...relative), false).normalize().multiplyScalar(900)
           : displayPosition(relative, scope.maxRadius, scope.global)
-        visual.mesh.position.copy(nextPosition)
-        const radius = visual.mesh.geometry.parameters.radius
-        visual.labelObject.position.set(
-          nextPosition.x + radius + 1.6,
-          nextPosition.y + radius + 1.8,
-          nextPosition.z,
-        )
+        visual.root.position.copy(nextPosition)
+        visual.labelObject.position.copy(nextPosition)
+        if (visual.body.id === 'sun') {
+          sunWorldPosition.copy(nextPosition)
+          sunlight.position.copy(nextPosition)
+        }
         if (visual.body.rotation_period_s) {
-          visual.mesh.rotation.y = (epochRef.current / 1e6 / visual.body.rotation_period_s * Math.PI * 2) % (Math.PI * 2)
+          const rotation = (epochRef.current / 1e6 / visual.body.rotation_period_s * Math.PI * 2) % (Math.PI * 2)
+          visual.mesh.rotation.y = rotation
+          if (visual.nightMesh) visual.nightMesh.rotation.y = rotation
+          if (visual.cloudMesh) {
+            visual.cloudMesh.rotation.y = (
+              epochRef.current / 1e6 / (visual.body.rotation_period_s * 0.985) * Math.PI * 2 + cloudPhase
+            ) % (Math.PI * 2)
+          }
         }
         const selected = visual.body.id === selectedRef.current
         visual.mesh.scale.setScalar(1)
         visual.selectionHalo.visible = selected
-        visual.material.emissive.setHex(
-          visual.body.body_class === 'star' ? 0xff8a20 : selected ? 0x1f6d72 : 0x000000,
-        )
-        visual.material.emissiveIntensity = visual.body.body_class === 'star' ? 2.15 : selected ? 0.68 : 0
+        visual.material.emissive.setHex(visual.body.body_class === 'star' ? 0xff8a20 : 0x000000)
+        visual.material.emissiveIntensity = visual.body.body_class === 'star' ? 2.15 : 0
         visual.label.classList.toggle('selected', selected)
         visual.label.classList.toggle('minor', scope.global
           && visual.body.body_class !== 'planet'
@@ -547,6 +646,9 @@ export function SolarMap({
         </small>
       </div>
       <div className="map-help">滚轮缩放 · 左键旋转 · 右键平移 · 双击进入层级</div>
+      {focusId !== 'sun' && (
+        <div className="sun-distance-badge">☀ 太阳 · 远场光源 · {solarDistanceAu.toFixed(3)} AU</div>
+      )}
       <div className="fps-meter" aria-label="当前 WebGL 帧率">-- FPS</div>
     </div>
   )

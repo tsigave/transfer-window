@@ -16,6 +16,8 @@ Bundled 2K assets:
 - `mercury.jpg`
 - `venus_atmosphere.jpg`
 - `earth_daymap.jpg`
+- `earth_clouds.jpg`
+- `earth_nightmap.jpg`
 - `moon.jpg`
 - `mars.jpg`
 - `jupiter.jpg`
@@ -26,3 +28,8 @@ Bundled 2K assets:
 
 No NASA logo or identifier is included. The texture pack must be credited as “Solar System
 Scope / INOVE, CC BY 4.0” in distributions that use these files.
+
+The Earth cloud and night maps were retrieved through their Wikimedia Commons mirrors;
+their file pages identify Solar System Scope as the author and retain the same CC BY 4.0
+license. The renderer uses the night map only on the hemisphere facing away from the simulated
+Sun. The cloud layer is a visual atmosphere approximation, not a live weather dataset.
