@@ -1,0 +1,33 @@
+# macOS
+.DS_Store
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# JavaScript / TypeScript
+node_modules/
+dist/
+coverage/
+
+# Rust
+target/
+
+# Tauri and packaging output
+src-tauri/gen/
+bundle/
+
+# Logs and local runtime data
+*.log
+saves/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# Local environment files
+.env
+.env.*
+!.env.example
