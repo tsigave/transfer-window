@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { SolarMap, type CameraAction } from './SolarMap'
 import { bodyById, catalog, childrenOf, dateFromEpoch, epochFromDate, heliocentricState, searchBodies, type Body } from './model'
 import { loadSnapshot, saveSnapshot } from './persistence'
+import { queryTransferPlans, type PlanTransferResult, type PlannerProgress } from './planner'
 import { queryBodyState } from './runtime'
 import './styles.css'
 
@@ -65,12 +66,48 @@ export default function App() {
   const [cameraAction, setCameraAction] = useState<CameraAction>({ id: 0, type: 'reset' })
   const [notice, setNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [plannerOpen, setPlannerOpen] = useState(false)
+  const [plannerOriginId, setPlannerOriginId] = useState('earth')
+  const [plannerDestinationId, setPlannerDestinationId] = useState('moon')
+  const [plannerPayloadKg, setPlannerPayloadKg] = useState(1_000)
+  const [plannerMinimumDays, setPlannerMinimumDays] = useState(3)
+  const [plannerMaximumDays, setPlannerMaximumDays] = useState(40)
+  const [plannerProgress, setPlannerProgress] = useState<PlannerProgress | null>(null)
+  const [plannerResult, setPlannerResult] = useState<PlanTransferResult | null>(null)
+  const [plannerSolutionId, setPlannerSolutionId] = useState<string | null>(null)
+  const [plannerError, setPlannerError] = useState<string | null>(null)
+  const plannerAbort = useRef<AbortController | null>(null)
   const selected = bodyById.get(selectedId) ?? bodyById.get('earth')!
   const results = useMemo(() => searchBodies(query), [query])
   const previewState = useMemo(() => heliocentricState(selected, epochTdbMicros), [selected, epochTdbMicros])
   const [pausedState, setPausedState] = useState(previewState)
   const state = timeRate === 0 ? pausedState : previewState
   const displayedDate = dateFromEpoch(epochTdbMicros)
+  const plannerSolution = plannerResult?.report.solutions.find((solution) => solution.id === plannerSolutionId) ?? null
+  const plannerFrontier = useMemo(() => {
+    if (!plannerResult) return []
+    return plannerResult.report.solutions.filter((solution) => plannerResult.paretoSolutionIds.includes(solution.id))
+  }, [plannerResult])
+  const heatCells = useMemo(() => {
+    if (!plannerResult) return []
+    const cells = [
+      ...plannerResult.report.solutions.map((solution) => ({
+        key: solution.id,
+        departure: solution.departure,
+        duration: solution.time_of_flight_s,
+        solution,
+        failure: null,
+      })),
+      ...plannerResult.report.failures.map((failure, index) => ({
+        key: `failure-${index}`,
+        departure: failure.departure ?? 0,
+        duration: failure.duration_s ?? 0,
+        solution: null,
+        failure,
+      })),
+    ]
+    return cells.sort((left, right) => left.departure - right.departure || left.duration - right.duration)
+  }, [plannerResult])
 
   useEffect(() => {
     try {
@@ -167,15 +204,65 @@ export default function App() {
     }
   }
 
+  function openPlanner() {
+    const destination = selectedId === 'earth' ? 'moon' : selectedId
+    setPlannerDestinationId(destination)
+    setPlannerOpen(true)
+  }
+
+  async function startPlanning() {
+    plannerAbort.current?.abort()
+    const controller = new AbortController()
+    plannerAbort.current = controller
+    setPlannerResult(null)
+    setPlannerSolutionId(null)
+    setPlannerError(null)
+    const requestId = `planner-${Date.now().toString(36)}`
+    setPlannerProgress({ requestId, evaluated: 0, planned: 15, executableSolutions: 0, status: 'completed' })
+    try {
+      const result = await queryTransferPlans({
+        requestId,
+        originId: plannerOriginId,
+        destinationId: plannerDestinationId,
+        departureTdbMicros: epochTdbMicros,
+        payloadMassKg: plannerPayloadKg,
+        payloadVolumeM3: plannerPayloadKg / 180,
+        minimumDurationDays: plannerMinimumDays,
+        maximumDurationDays: plannerMaximumDays,
+      }, setPlannerProgress, controller.signal)
+      setPlannerResult(result)
+      setPlannerSolutionId(result.representatives?.balanced ?? result.paretoSolutionIds[0] ?? null)
+    } catch (reason) {
+      setPlannerError(reason instanceof Error ? reason.message : String(reason))
+    } finally {
+      if (plannerAbort.current === controller) plannerAbort.current = null
+    }
+  }
+
+  function cancelPlanning() {
+    plannerAbort.current?.abort()
+  }
+
+  function representativeLabel(id: string): string {
+    const representatives = plannerResult?.representatives
+    if (!representatives) return ''
+    const labels = []
+    if (id === representatives.fastest) labels.push('最快')
+    if (id === representatives.balanced) labels.push('平衡')
+    if (id === representatives.efficient) labels.push('节能')
+    return labels.join(' / ')
+  }
+
   return (
     <main className="app-shell">
       <header className="topbar">
-        <div className="brand"><span className="brand-mark">T</span><div><b>TRANSFER WINDOW</b><small>太阳系事实层 · alpha v0.1</small></div></div>
+        <div className="brand"><span className="brand-mark">T</span><div><b>TRANSFER WINDOW</b><small>可达空间 · alpha v0.2</small></div></div>
         <div className="clock-block">
           <small>模拟时间 · TDB 内部纪元</small>
           <time>{displayedDate.toISOString().slice(0, 10)} <b>{displayedDate.toISOString().slice(11, 19)}</b></time>
         </div>
         <div className="save-actions">
+          <button className="planner-button" onClick={openPlanner}>航迹规划</button>
           <button onClick={save}>保存</button><button onClick={load}>载入</button>
           <span className="content-version">内容 {catalog.content_version}</span>
         </div>
@@ -256,6 +343,69 @@ export default function App() {
         <section><h2>星历状态 <i>{displayedDate.toISOString().slice(0, 10)}</i></h2><dl><dt>参考系</dt><dd>日心黄道 J2000</dd><dt>位置 X / Y / Z</dt><dd className="vector">{state.position_m.map((value) => `${(value / AU).toFixed(6)}`).join(' / ')} AU</dd><dt>速度</dt><dd>{formatNumber.format(Math.hypot(...state.velocity_mps) / 1000)} km/s</dd></dl></section>
         <section className="source"><h2>数据来源</h2><a href={selected.ephemeris_source.url} target="_blank" rel="noreferrer">{selected.ephemeris_source.name} ↗</a><p>{selected.ephemeris_source.kind === 'public_reference' ? '公开参考参数 · 可追溯' : '公开参数的解析近似 · 非执行级'}</p></section>
       </aside>
+
+      {plannerOpen && (
+        <section className="planner-drawer" aria-label="航迹规划">
+          <header className="planner-header">
+            <div><small>ALPHA V0.2 · TRANSFER PLANNER</small><h2>可达空间航迹规划</h2></div>
+            <div className="planner-header-actions">
+              <span>{plannerProgress ? `${plannerProgress.evaluated} / ${plannerProgress.planned} · ${plannerProgress.executableSolutions} 个可执行` : '等待计算'}</span>
+              {plannerAbort.current && <button onClick={cancelPlanning}>取消计算</button>}
+              <button aria-label="关闭航迹规划" onClick={() => { cancelPlanning(); setPlannerOpen(false) }}>×</button>
+            </div>
+          </header>
+
+          <div className="planner-controls">
+            <label>始发天体<select value={plannerOriginId} onChange={(event) => setPlannerOriginId(event.target.value)}>{catalog.bodies.map((body) => <option key={body.id} value={body.id}>{body.localized_name_zh} · {body.id}</option>)}</select></label>
+            <label>目标天体<select value={plannerDestinationId} onChange={(event) => setPlannerDestinationId(event.target.value)}>{catalog.bodies.map((body) => <option key={body.id} value={body.id}>{body.localized_name_zh} · {body.id}</option>)}</select></label>
+            <label>载荷 kg<input type="number" min={0} max={120000} value={plannerPayloadKg} onChange={(event) => setPlannerPayloadKg(Number(event.target.value))} /></label>
+            <label>最短天数<input type="number" min={1} value={plannerMinimumDays} onChange={(event) => setPlannerMinimumDays(Number(event.target.value))} /></label>
+            <label>最长天数<input type="number" min={plannerMinimumDays} value={plannerMaximumDays} onChange={(event) => setPlannerMaximumDays(Number(event.target.value))} /></label>
+            <button className="calculate" disabled={Boolean(plannerAbort.current)} onClick={() => void startPlanning()}>计算 3 × 5 窗口</button>
+          </div>
+
+          <div className="planner-progress" aria-label="航迹计算进度">
+            <span style={{ width: `${plannerProgress ? Math.min(100, plannerProgress.evaluated / plannerProgress.planned * 100) : 0}%` }} />
+          </div>
+          {plannerError && <div className="planner-error">{plannerError}</div>}
+
+          <div className="planner-content">
+            <section className="planner-summary">
+              <h3>约束与目标服务</h3>
+              <dl><dt>舰船</dt><dd>Lunar Courier · rev 1</dd><dt>舱容</dt><dd>120,000 kg / 650 m³</dd><dt>抵达条件</dt><dd>Rendezvous · 执行级复核</dd><dt>储备策略</dt><dd>显式零储备 · 不隐含补给</dd></dl>
+              <div className="service-warning"><b>{bodyById.get(plannerDestinationId)?.localized_name_zh}</b><span>无市场 · 无补给 · 无维修</span><small>开发权限不阻止规划，但不会创建虚构服务。</small></div>
+              {plannerResult && <p className="solver-status">状态 {plannerResult.report.termination_reason} · 已保留 {plannerResult.report.solutions.length} 个结果 / {plannerResult.report.failures.length} 个不可行原因</p>}
+            </section>
+
+            <section className="planner-heatmap">
+              <h3>出发日—航程热图 <small>颜色越亮，工质越低</small></h3>
+              <div className="heatmap-grid">
+                {heatCells.map((cell) => {
+                  const intensity = cell.solution ? Math.max(.12, 1 - cell.solution.propellant_consumed_kg / 300000) : 0
+                  return <button key={cell.key} disabled={!cell.solution} className={cell.solution?.id === plannerSolutionId ? 'selected' : ''} style={{ '--heat': intensity } as CSSProperties} title={cell.solution ? `${dateFromEpoch(cell.departure).toISOString().slice(0, 10)} · ${(cell.duration / 86400).toFixed(1)} 天 · ${cell.solution.propellant_consumed_kg.toFixed(0)} kg` : cell.failure?.message} onClick={() => cell.solution && setPlannerSolutionId(cell.solution.id)}><span>{dateFromEpoch(cell.departure).toISOString().slice(5, 10)}</span><b>{(cell.duration / 86400).toFixed(0)}d</b></button>
+                })}
+                {!heatCells.length && <div className="empty-state">设置约束后开始计算；进行中会持续报告已评估数量和部分可执行结果。</div>}
+              </div>
+            </section>
+
+            <section className="planner-table-wrap">
+              <h3>Pareto 前沿 <small>{plannerFrontier.length} 个非支配方案</small></h3>
+              <table className="planner-table"><thead><tr><th>代表</th><th>出发</th><th>航程</th><th>工质</th><th>载荷</th><th>寿命</th><th>估算成本</th></tr></thead><tbody>
+                {plannerFrontier.map((solution) => <tr key={solution.id} className={solution.id === plannerSolutionId ? 'selected' : ''} onClick={() => setPlannerSolutionId(solution.id)}><td><b>{representativeLabel(solution.id) || '前沿'}</b></td><td>{dateFromEpoch(solution.departure).toISOString().slice(0, 10)}</td><td>{(solution.time_of_flight_s / 86400).toFixed(1)} d</td><td>{formatNumber.format(solution.propellant_consumed_kg)} kg</td><td>{formatNumber.format(solution.payload_mass_kg)} kg</td><td>{(solution.engine_lifetime_used_s / 3600).toFixed(1)} h</td><td>{formatNumber.format(solution.estimated_cost_credits)}</td></tr>)}
+              </tbody></table>
+            </section>
+
+            <section className="planner-detail">
+              <h3>执行级展开 <small>{plannerSolution?.id ?? '未选择方案'}</small></h3>
+              {plannerSolution ? <>
+                <div className="engineering-cards"><div><small>质量预算</small><b>{formatNumber.format(plannerSolution.propellant_consumed_kg)} kg 工质</b><span>{plannerSolution.fusion_fuel_consumed_kg.toFixed(3)} kg 聚变燃料</span></div><div><small>功率 / 热峰值</small><b>{(plannerSolution.peak_power_w / 1e9).toFixed(3)} GW</b><span>{(plannerSolution.peak_waste_heat_w / 1e6).toFixed(1)} MW 废热</span></div><div><small>复核误差余量</small><b>{formatNumber.format(plannerSolution.margins.position_error_m)} m</b><span>{plannerSolution.margins.velocity_error_mps.toFixed(4)} m/s</span></div></div>
+                <ol className="segment-list">{plannerSolution.segments.map((segment, index) => <li key={`${segment.kind}-${index}`}><b>{segment.kind.replaceAll('_', ' ')}</b><span>{segment.phase ?? (segment.kind === 'coast' ? '日心滑行' : '抵达复核')}</span><em>{segment.powered_duration_s ? `${(segment.powered_duration_s / 3600).toFixed(1)} h · ${segment.chunk_count} 段` : segment.planned_position_error_m ? `${segment.planned_position_error_m.toFixed(1)} m` : '状态矢量已记录'}</em></li>)}</ol>
+                <p className="solver-meta">输入 {plannerSolution.metadata.input_hash.slice(0, 16)}… · {plannerSolution.metadata.solver_version} · Lambert {plannerSolution.metadata.lambert_iterations} 次 · 积分 {plannerSolution.metadata.integrator_accepted_steps} 步 · 容差 {formatNumber.format(plannerSolution.metadata.position_tolerance_m)} m / {plannerSolution.metadata.velocity_tolerance_mps} m/s</p>
+              </> : <div className="empty-state">从热图或 Pareto 表中选择一个可执行方案查看推力段、状态矢量、质量、功率、热峰值和误差余量。</div>}
+            </section>
+          </div>
+        </section>
+      )}
 
       {(notice || error) && <div className={error ? 'toast error' : 'toast'} role="status"><button onClick={() => { setNotice(null); setError(null) }}>×</button><b>{error ? '存档操作失败' : '完成'}</b><span>{error ?? notice}</span></div>}
     </main>

@@ -3,12 +3,14 @@
 mod integrator;
 mod lambert;
 mod math;
+mod pareto;
 
 pub use integrator::{
     integrate_two_body_adaptive, CartesianState, IntegrationError, IntegrationResult,
     IntegratorOptions,
 };
 pub use lambert::{solve_lambert_universal, LambertArc, LambertError, TransferDirection};
+pub use pareto::{pareto_front, select_representatives, ParetoObjectives, RepresentativeSolutions};
 
 use crate::math::{norm, sub, unit, Vector3};
 use serde::{Deserialize, Serialize};
@@ -188,6 +190,7 @@ pub struct TransferSolution {
     pub departure: TdbInstant,
     pub arrival: TdbInstant,
     pub time_of_flight_s: f64,
+    pub payload_mass_kg: f64,
     pub lambert_arc: LambertArc,
     pub patched_conic_events: Vec<PatchedConicEvent>,
     pub segments: Vec<TrajectorySegment>,
@@ -197,10 +200,23 @@ pub struct TransferSolution {
     pub peak_waste_heat_w: f64,
     pub reactor_lifetime_used_s: f64,
     pub engine_lifetime_used_s: f64,
+    pub estimated_cost_credits: f64,
     pub margins: FeasibilityMargins,
     pub destination_services: DestinationServices,
     pub validation_level: ValidationLevel,
     pub metadata: SolverMetadata,
+}
+
+impl TransferSolution {
+    pub fn pareto_objectives(&self) -> ParetoObjectives {
+        ParetoObjectives {
+            arrival_tdb_micros: self.arrival.micros_since_j2000(),
+            propellant_kg: self.propellant_consumed_kg,
+            payload_kg: self.payload_mass_kg,
+            lifetime_used_s: self.reactor_lifetime_used_s + self.engine_lifetime_used_s,
+            estimated_cost_credits: self.estimated_cost_credits,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -641,6 +657,7 @@ impl TrajectorySolver {
             departure,
             arrival,
             time_of_flight_s: duration_s,
+            payload_mass_kg: request.payload_mass_kg.value(),
             lambert_arc: lambert.clone(),
             patched_conic_events,
             segments,
@@ -652,6 +669,12 @@ impl TrajectorySolver {
                 - initial_reactor_life,
             engine_lifetime_used_s: working_vessel.engine_full_power_used_s.value()
                 - initial_engine_life,
+            estimated_cost_credits: (initial_propellant - working_vessel.propellant_kg.value())
+                * 2.0
+                + (initial_fusion_fuel - working_vessel.fusion_fuel_kg.value()) * 1_000.0
+                + ((working_vessel.reactor_full_power_used_s.value() - initial_reactor_life)
+                    + (working_vessel.engine_full_power_used_s.value() - initial_engine_life))
+                    * 0.05,
             margins: FeasibilityMargins {
                 position_error_m: position_error,
                 velocity_error_mps: velocity_error,

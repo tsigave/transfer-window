@@ -2961,6 +2961,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "sim-engineering"
+version = "0.1.6"
+dependencies = [
+ "blake3",
+ "serde",
+ "serde_json",
+ "serde_path_to_error",
+ "sim-time",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "sim-save"
 version = "0.1.6"
 dependencies = [
@@ -2978,6 +2990,19 @@ version = "0.1.6"
 dependencies = [
  "serde",
  "serde_json",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "sim-trajectory"
+version = "0.1.6"
+dependencies = [
+ "blake3",
+ "serde",
+ "serde_json",
+ "sim-astro",
+ "sim-engineering",
+ "sim-time",
  "thiserror 2.0.20",
 ]
 
@@ -3781,8 +3806,10 @@ dependencies = [
  "serde_json",
  "sim-app",
  "sim-astro",
+ "sim-engineering",
  "sim-save",
  "sim-time",
+ "sim-trajectory",
  "tauri",
  "tauri-build",
 ]

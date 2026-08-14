@@ -1,15 +1,54 @@
 use serde::{Deserialize, Serialize};
 use sim_app::SimulationApp;
-use sim_time::{StableId, TdbInstant};
+use sim_engineering::{MassKilograms, ReservePolicy, VolumeCubicMeters};
+use sim_time::{StableId, TdbInstant, MICROS_PER_DAY};
+use sim_trajectory::{
+    pareto_front, select_representatives, standard_test_vessel, ArrivalCondition,
+    CancellationToken, DurationWindow, SolverOptions, TimeWindow, TrajectorySolver,
+    TransferRequest,
+};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
-use tauri::{AppHandle, Manager, State};
+use std::sync::{Arc, Mutex};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 const SAVE_FILE_NAME: &str = "alpha-v0.1.transfer-window";
 const LEGACY_SAVE_FILE_NAME: &str = "alpha-v0.1.solarstorm";
 const LEGACY_APP_IDENTIFIER: &str = "game.solarstorm.alpha";
 
 struct AppState(Mutex<SimulationApp>);
+struct PlannerState(Arc<Mutex<BTreeMap<String, CancellationToken>>>);
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PlanTransferArgs {
+    request_id: String,
+    origin_id: String,
+    destination_id: String,
+    departure_tdb_micros: i64,
+    payload_mass_kg: f64,
+    payload_volume_m3: f64,
+    minimum_duration_days: f64,
+    maximum_duration_days: f64,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct PlannerProgressEvent {
+    request_id: String,
+    evaluated: u32,
+    planned: u32,
+    executable_solutions: usize,
+    status: sim_trajectory::SearchStatus,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PlanTransferResult {
+    report: sim_trajectory::TransferSearchReport,
+    pareto_solution_ids: Vec<StableId>,
+    representatives: Option<sim_trajectory::RepresentativeSolutions>,
+}
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -133,17 +172,126 @@ fn load_game(app_handle: AppHandle, state: State<'_, AppState>) -> Result<String
     serde_json::to_string(&view).map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+async fn plan_transfer(
+    app_handle: AppHandle,
+    state: State<'_, PlannerState>,
+    args: PlanTransferArgs,
+) -> Result<PlanTransferResult, String> {
+    let cancellation = CancellationToken::default();
+    state
+        .0
+        .lock()
+        .map_err(|_| "PLANNER_STATE_POISONED".to_string())?
+        .insert(args.request_id.clone(), cancellation.clone());
+    let requests = Arc::clone(&state.0);
+    tauri::async_runtime::spawn_blocking(move || {
+        let result = (|| {
+            let solver = TrajectorySolver::bundled().map_err(|error| error.to_string())?;
+            let (blueprint, vessel) = standard_test_vessel("ship:lunar-courier")
+                .map_err(|error| error.to_string())?;
+            let departure = TdbInstant::from_micros_since_j2000(args.departure_tdb_micros);
+            let request = TransferRequest {
+                origin_id: StableId::new(args.origin_id.clone())
+                    .map_err(|error| error.to_string())?,
+                destination_id: StableId::new(args.destination_id.clone())
+                    .map_err(|error| error.to_string())?,
+                departure_window: TimeWindow {
+                    earliest: departure,
+                    latest: departure
+                        .checked_add_micros(30 * MICROS_PER_DAY)
+                        .map_err(|error| error.to_string())?,
+                },
+                duration_window: DurationWindow {
+                    minimum_s: args.minimum_duration_days * 86_400.0,
+                    maximum_s: args.maximum_duration_days * 86_400.0,
+                },
+                vessel_id: vessel.id.clone(),
+                payload_mass_kg: MassKilograms::new(args.payload_mass_kg)
+                    .map_err(|error| error.to_string())?,
+                payload_volume_m3: VolumeCubicMeters::new(args.payload_volume_m3)
+                    .map_err(|error| error.to_string())?,
+                reserve_policy: ReservePolicy::zero(),
+                arrival_condition: ArrivalCondition::Rendezvous,
+                options: SolverOptions {
+                    departure_samples: 3,
+                    duration_samples: 5,
+                    maximum_evaluations: 15,
+                    ..SolverOptions::default()
+                },
+            };
+            let event_request_id = args.request_id.clone();
+            let report = solver
+                .search_with_progress(
+                    &request,
+                    &blueprint,
+                    &vessel,
+                    &cancellation,
+                    |progress| {
+                        let _ = app_handle.emit(
+                            "trajectory-progress",
+                            PlannerProgressEvent {
+                                request_id: event_request_id.clone(),
+                                evaluated: progress.evaluated,
+                                planned: progress.planned,
+                                executable_solutions: progress.executable_solutions,
+                                status: progress.status,
+                            },
+                        );
+                    },
+                )
+                .map_err(|error| error.to_string())?;
+            let frontier = pareto_front(&report.solutions);
+            let representatives = select_representatives(&frontier);
+            Ok(PlanTransferResult {
+                pareto_solution_ids: frontier
+                    .iter()
+                    .map(|solution| solution.id.clone())
+                    .collect(),
+                report,
+                representatives,
+            })
+        })();
+        if let Ok(mut active) = requests.lock() {
+            active.remove(&args.request_id);
+        }
+        result
+    })
+    .await
+    .map_err(|error| format!("PLANNER_TASK_FAILED: {error}"))?
+}
+
+#[tauri::command]
+fn cancel_transfer(
+    state: State<'_, PlannerState>,
+    request_id: String,
+) -> Result<bool, String> {
+    let active = state
+        .0
+        .lock()
+        .map_err(|_| "PLANNER_STATE_POISONED".to_string())?;
+    if let Some(cancellation) = active.get(&request_id) {
+        cancellation.cancel();
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let simulation = SimulationApp::new_standard_2160().expect("bundled catalog must be valid");
     tauri::Builder::default()
         .manage(AppState(Mutex::new(simulation)))
+        .manage(PlannerState(Arc::new(Mutex::new(BTreeMap::new()))))
         .invoke_handler(tauri::generate_handler![
             list_bodies,
             body_state,
             map_sample,
             save_game,
-            load_game
+            load_game,
+            plan_transfer,
+            cancel_transfer
         ])
         .run(tauri::generate_context!())
         .expect("error while running Transfer Window");
