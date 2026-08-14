@@ -13,8 +13,17 @@ describe('alpha v0.2 transfer planner', () => {
     expect(screen.getByRole('heading', { name: '可达空间航迹规划' })).toBeInTheDocument()
     expect(screen.getByText('无市场 · 无补给 · 无维修')).toBeInTheDocument()
 
+    const destination = screen.getByLabelText('目标天体')
+    fireEvent.change(destination, { target: { value: 'callisto' } })
+    expect(destination).toHaveValue('callisto')
+    expect(screen.getByText('无市场 · 无补给 · 无维修')).toBeInTheDocument()
+    fireEvent.change(destination, { target: { value: 'triton' } })
+    expect(destination).toHaveValue('triton')
+    fireEvent.change(destination, { target: { value: 'moon' } })
+
     fireEvent.click(screen.getByRole('button', { name: '计算 3 × 5 窗口' }))
     await waitFor(() => expect(screen.getByText('质量预算')).toBeInTheDocument(), { timeout: 3_000 })
+    expect(screen.getAllByTitle(/\d{4}-\d{2}-\d{2} ·/).length).toBeGreaterThanOrEqual(3)
     expect(screen.getByText(/browser-preview-v1/)).toBeInTheDocument()
     expect(screen.getAllByText(/最快|平衡|节能/).length).toBeGreaterThan(0)
   })

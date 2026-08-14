@@ -10,6 +10,7 @@ use sim_trajectory::{
     TransferDirection, TransferRequest, ValidationLevel,
 };
 use std::sync::Arc;
+use std::time::Instant;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -77,6 +78,7 @@ enum ReplayCommand {
 enum TrajectoryCommand {
     Golden,
     CatalogSmoke,
+    Performance,
 }
 
 #[derive(Debug, Args)]
@@ -108,6 +110,9 @@ fn main() -> Result<()> {
         Command::Trajectory {
             command: TrajectoryCommand::CatalogSmoke,
         } => trajectory_catalog_smoke(),
+        Command::Trajectory {
+            command: TrajectoryCommand::Performance,
+        } => trajectory_performance(),
     }
 }
 
@@ -216,6 +221,55 @@ fn trajectory_catalog_smoke() -> Result<()> {
     println!("executable={executable}");
     println!("structured_infeasible={structured_infeasible}");
     println!("trajectory catalog smoke: PASS");
+    Ok(())
+}
+
+fn trajectory_performance() -> Result<()> {
+    let solver = TrajectorySolver::bundled()?;
+    let (blueprint, vessel) = standard_test_vessel("ship:lunar-courier")?;
+    for (destination, minimum_days, maximum_days) in [("moon", 3.0, 40.0), ("mars", 80.0, 500.0)] {
+        let mut request = trajectory_request(
+            "earth",
+            destination,
+            &vessel.id,
+            minimum_days,
+            maximum_days,
+            3,
+            5,
+        )?;
+        request.arrival_condition = ArrivalCondition::Rendezvous;
+        let started = Instant::now();
+        let report = solver.search(&request, &blueprint, &vessel, &CancellationToken::default())?;
+        let elapsed = started.elapsed();
+        if report.solutions.is_empty() {
+            bail!(
+                "{destination} performance scenario has no executable result: {:?}",
+                report.termination_reason
+            );
+        }
+        if elapsed.as_secs_f64() > 5.0 {
+            bail!("{destination} first representative exceeded 5 seconds: {elapsed:?}");
+        }
+        println!(
+            "destination={destination:<5} elapsed_ms={:.3} executable={} evaluated={}",
+            elapsed.as_secs_f64() * 1_000.0,
+            report.solutions.len(),
+            report.evaluated,
+        );
+    }
+
+    let request = trajectory_request("earth", "moon", &vessel.id, 3.0, 40.0, 3, 5)?;
+    let cancellation = CancellationToken::default();
+    cancellation.cancel();
+    let cancelled = solver.search(&request, &blueprint, &vessel, &cancellation)?;
+    if cancelled.status != sim_trajectory::SearchStatus::Cancelled
+        || cancelled.evaluated != 0
+        || !cancelled.solutions.is_empty()
+    {
+        bail!("pre-cancelled search left evaluated or partial work");
+    }
+    println!("cancelled_evaluations=0 residual_solutions=0");
+    println!("trajectory performance: PASS");
     Ok(())
 }
 

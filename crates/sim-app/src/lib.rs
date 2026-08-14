@@ -450,6 +450,8 @@ impl SimulationApp {
                 .to_string();
         let plan_id = StableId::new(format!("plan:{}", &digest[..24]))?;
         let events = voyage_events(&plan_id, &command.solution)?;
+        let payload_mass_kg = command.request.payload_mass_kg;
+        let payload_volume_m3 = command.request.payload_volume_m3;
         let plan = VoyagePlan {
             id: plan_id.clone(),
             vessel_id: command.request.vessel_id.clone(),
@@ -461,11 +463,14 @@ impl SimulationApp {
             actual_reactor_lifetime_used_s: 0.0,
             actual_engine_lifetime_used_s: 0.0,
         };
-        self.world
+        let vessel = self
+            .world
             .vessels
             .get_mut(&plan.vessel_id)
-            .expect("validated vessel remains present")
-            .active_plan_id = Some(plan_id.clone());
+            .expect("validated vessel remains present");
+        vessel.payload_mass_kg = payload_mass_kg;
+        vessel.payload_volume_m3 = payload_volume_m3;
+        vessel.active_plan_id = Some(plan_id.clone());
         for event in events {
             self.queue.push(event);
         }
@@ -1085,6 +1090,14 @@ mod tests {
             solution,
         };
         let receipt = app.schedule_voyage(command.clone()).unwrap();
+        assert_eq!(
+            app.primary_vessel().unwrap().payload_mass_kg.value(),
+            1_000.0
+        );
+        assert_eq!(
+            app.primary_vessel().unwrap().payload_volume_m3.value(),
+            10.0
+        );
         assert_eq!(
             app.schedule_voyage(command).unwrap().object_id,
             receipt.object_id

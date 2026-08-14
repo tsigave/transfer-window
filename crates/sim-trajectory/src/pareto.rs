@@ -154,6 +154,8 @@ fn balanced_score(objectives: ParetoObjectives, ranges: ObjectiveRanges) -> f64 
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use super::*;
     use crate::{
         standard_test_vessel, ArrivalCondition, CancellationToken, DurationWindow, SolverOptions,
@@ -196,6 +198,12 @@ mod tests {
             .unwrap();
         let frontier = pareto_front(&report.solutions);
         let representatives = select_representatives(&frontier).unwrap();
+        let departures = report
+            .solutions
+            .iter()
+            .map(|solution| solution.departure)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(departures.len(), 3);
         let ids: Vec<_> = frontier.iter().map(|solution| &solution.id).collect();
         assert!(ids.contains(&&representatives.fastest));
         assert!(ids.contains(&&representatives.balanced));

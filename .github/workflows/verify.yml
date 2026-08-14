@@ -26,3 +26,8 @@ jobs:
       - run: cargo run -p sim-tools -- catalog audit
       - run: cargo run -p sim-tools -- ephemeris verify --span-years 200
       - run: cargo run -p sim-tools -- replay empty-world --rates 0,1,100,10000
+      - run: cargo run -p sim-tools -- engineering audit
+      - run: cargo run -p sim-tools -- trajectory golden
+      - run: cargo run -p sim-tools -- trajectory catalog-smoke
+      - run: cargo run -p sim-tools -- trajectory performance
+      - run: cargo run -p sim-tools -- replay voyage --rates 1,100,10000
