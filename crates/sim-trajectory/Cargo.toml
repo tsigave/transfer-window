@@ -1,19 +1,14 @@
 [package]
-name = "sim-tools"
+name = "sim-trajectory"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
-[[bin]]
-name = "sim-tools"
-path = "src/main.rs"
-
 [dependencies]
-anyhow.workspace = true
-clap.workspace = true
+blake3.workspace = true
+serde.workspace = true
 serde_json.workspace = true
-sim-app = { path = "../sim-app" }
 sim-astro = { path = "../sim-astro" }
 sim-engineering = { path = "../sim-engineering" }
 sim-time = { path = "../sim-time" }
-sim-trajectory = { path = "../sim-trajectory" }
+thiserror.workspace = true

@@ -503,7 +503,7 @@ fn validate_body(body: &CelestialBody, index: usize) -> Result<(), AstroError> {
     Ok(())
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StateVector {
     pub frame_id: FrameId,
     pub epoch_tdb: TdbInstant,
@@ -564,7 +564,7 @@ impl StateVector {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BodyState {
     pub body_id: StableId,
     #[serde(flatten)]

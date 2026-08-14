@@ -17,12 +17,12 @@
 
 ## 工作流 B：候选与执行级求解
 
-- [ ] 实现两体 Lambert 候选与 patched-conics 事件序列，经典转移案例达到约定误差。
-- [ ] 在出发窗口和航程范围内采样候选，区分无物理解、数值未收敛和搜索预算耗尽。
-- [ ] 实现分段有限推力优化，连续更新舰船质量、功率和热状态。
-- [ ] 使用独立自适应积分器复核候选，只有满足容差与储备策略的结果标为 `Executable`。
-- [ ] 求解器记录输入哈希、版本、容差、迭代次数和终止原因，保证问题可重现。
-- [ ] 对所有目录天体允许提交请求；无补给目标不自动添加燃料或捕获服务。
+- [x] 实现两体 Lambert 候选与 patched-conics 事件序列，经典转移案例达到约定误差。
+- [x] 在出发窗口和航程范围内采样候选，区分无物理解、数值未收敛和搜索预算耗尽。
+- [x] 实现分段有限推力优化，连续更新舰船质量、功率和热状态。
+- [x] 使用独立自适应积分器复核候选，只有满足容差与储备策略的结果标为 `Executable`。
+- [x] 求解器记录输入哈希、版本、容差、迭代次数和终止原因，保证问题可重现。
+- [x] 对所有目录天体允许提交请求；无补给目标不自动添加燃料或捕获服务。
 
 ## 工作流 C：Pareto 与规划界面
 
@@ -48,8 +48,8 @@
 
 ## 自动验证
 
-- [ ] `cargo run -p sim-tools -- trajectory golden` 通过两体、patched-conics 和有限推力金标准。
-- [ ] `cargo run -p sim-tools -- trajectory catalog-smoke` 对每个登记天体至少得到结果或结构化不可行原因。
+- [x] `cargo run -p sim-tools -- trajectory golden` 通过两体、patched-conics 和有限推力金标准。
+- [x] `cargo run -p sim-tools -- trajectory catalog-smoke` 对每个登记天体至少得到结果或结构化不可行原因。
 - [ ] `cargo run -p sim-tools -- replay voyage --rates 1,100,10000` 的抵达状态与消耗一致。
 - [ ] 普通地月/地火代表方案在目标硬件 5 秒内出现，超时可取消且无残留任务。
 
@@ -77,3 +77,4 @@
 
 - 初版：把“可通航”和“可开发”拆为独立权限与能力。
 - 舰船工程事实层：完成工作流 A；证据为 `sim-engineering` 金标准与属性测试，以及 `sim-tools engineering audit` 对四套虚构蓝图的模式审计。
+- 航迹候选与复核：完成工作流 B；`trajectory golden` 验证经典两体、patched-conics、有限推力和独立积分，`trajectory catalog-smoke` 验证全部登记天体的统一请求入口。

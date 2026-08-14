@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 
-const rootCargoPackages = ['sim-app', 'sim-astro', 'sim-engineering', 'sim-save', 'sim-time', 'sim-tools']
+const rootCargoPackages = ['sim-app', 'sim-astro', 'sim-engineering', 'sim-save', 'sim-time', 'sim-tools', 'sim-trajectory']
 const tauriCargoPackages = ['sim-app', 'sim-astro', 'sim-save', 'sim-time', 'transfer-window-desktop']
 const currentVersionDocs = ['README.md', 'docs/README.md']
 const versionPattern = /^(?:v)?(\d+)\.(\d+)\.(\d+)$/

@@ -2,8 +2,13 @@ use anyhow::{bail, Context, Result};
 use clap::{Args, Parser, Subcommand};
 use sim_app::SimulationApp;
 use sim_astro::{Catalog, EphemerisService};
-use sim_engineering::EngineeringCatalog;
-use sim_time::{CalendarDateTime, TdbInstant, MICROS_PER_DAY};
+use sim_engineering::{EngineeringCatalog, MassKilograms, ReservePolicy, VolumeCubicMeters};
+use sim_time::{CalendarDateTime, StableId, TdbInstant, MICROS_PER_DAY};
+use sim_trajectory::{
+    local_parking_delta_v, solve_lambert_universal, standard_test_vessel, ArrivalCondition,
+    CancellationToken, DurationWindow, SolverOptions, TimeWindow, TrajectorySolver,
+    TransferDirection, TransferRequest, ValidationLevel,
+};
 use std::sync::Arc;
 
 #[derive(Debug, Parser)]
@@ -35,6 +40,10 @@ enum Command {
         #[command(subcommand)]
         command: ReplayCommand,
     },
+    Trajectory {
+        #[command(subcommand)]
+        command: TrajectoryCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -63,6 +72,12 @@ enum ReplayCommand {
     EmptyWorld(ReplayArgs),
 }
 
+#[derive(Debug, Subcommand)]
+enum TrajectoryCommand {
+    Golden,
+    CatalogSmoke,
+}
+
 #[derive(Debug, Args)]
 struct ReplayArgs {
     #[arg(long, value_delimiter = ',', default_value = "0,1,100,10000")]
@@ -83,7 +98,156 @@ fn main() -> Result<()> {
         Command::Replay {
             command: ReplayCommand::EmptyWorld(args),
         } => replay_empty_world(&args.rates),
+        Command::Trajectory {
+            command: TrajectoryCommand::Golden,
+        } => trajectory_golden(),
+        Command::Trajectory {
+            command: TrajectoryCommand::CatalogSmoke,
+        } => trajectory_catalog_smoke(),
     }
+}
+
+fn trajectory_golden() -> Result<()> {
+    let lambert = solve_lambert_universal(
+        [5_000_000.0, 10_000_000.0, 2_100_000.0],
+        [-14_600_000.0, 2_500_000.0, 7_000_000.0],
+        3_600.0,
+        3.986_004_418e14,
+        TransferDirection::ShortWay,
+    )?;
+    let expected_departure = [-5_992.495, 1_925.367, 3_245.638];
+    let lambert_error = norm(subtract(lambert.departure_velocity_mps, expected_departure));
+    if lambert_error > 0.04 {
+        bail!("Lambert golden velocity error {lambert_error:.6} m/s");
+    }
+
+    let catalog = Catalog::bundled()?;
+    let earth = catalog.body(&StableId::new("earth")?)?;
+    let escape_delta_v = local_parking_delta_v(earth, 3_000.0);
+    if (escape_delta_v - 3_602.15).abs() > 0.05 {
+        bail!("patched-conics escape error: {escape_delta_v:.6} m/s");
+    }
+
+    let solver = TrajectorySolver::bundled()?;
+    let (blueprint, vessel) = standard_test_vessel("ship:lunar-courier")?;
+    let mut request = trajectory_request("earth", "moon", &vessel.id, 3.0, 30.0, 2, 4)?;
+    request.arrival_condition = ArrivalCondition::Rendezvous;
+    let report = solver.search(&request, &blueprint, &vessel, &CancellationToken::default())?;
+    let solution = report
+        .solutions
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("finite-thrust golden produced no executable solution"))?;
+    if solution.validation_level != ValidationLevel::Executable
+        || solution.propellant_consumed_kg < 0.0
+        || solution.metadata.integrator_accepted_steps == 0
+    {
+        bail!("finite-thrust or independent verification golden failed");
+    }
+
+    println!("lambert_velocity_error_mps={lambert_error:.9}");
+    println!("patched_conics_escape_delta_v_mps={escape_delta_v:.6}");
+    println!("finite_thrust_solution_id={}", solution.id);
+    println!(
+        "finite_thrust_propellant_kg={:.6}",
+        solution.propellant_consumed_kg
+    );
+    println!(
+        "verification_position_error_m={:.6}",
+        solution.margins.position_error_m
+    );
+    println!("trajectory golden: PASS");
+    Ok(())
+}
+
+fn trajectory_catalog_smoke() -> Result<()> {
+    let catalog = Catalog::bundled()?;
+    let solver = TrajectorySolver::bundled()?;
+    let (blueprint, vessel) = standard_test_vessel("ship:autonomous-surveyor")?;
+    let cancellation = CancellationToken::default();
+    let mut executable = 0_usize;
+    let mut structured_infeasible = 0_usize;
+    for body in catalog.bodies() {
+        let (origin, duration_days) = if body.id.as_str() == "earth" {
+            ("moon", 30.0)
+        } else if body
+            .parent_id
+            .as_ref()
+            .is_some_and(|parent| parent.as_str() != "sun")
+        {
+            ("earth", 120.0)
+        } else {
+            ("earth", 1_200.0)
+        };
+        let request = trajectory_request(
+            origin,
+            body.id.as_str(),
+            &vessel.id,
+            duration_days * 0.5,
+            duration_days,
+            1,
+            1,
+        )?;
+        let report = solver.search(&request, &blueprint, &vessel, &cancellation)?;
+        if report.solutions.is_empty() {
+            if report.failures.is_empty() {
+                bail!(
+                    "target {} returned neither result nor structured reason",
+                    body.id
+                );
+            }
+            structured_infeasible += 1;
+            println!(
+                "target={:<12} result={:?} detail={}",
+                body.id, report.termination_reason, report.failures[0].message
+            );
+        } else {
+            executable += 1;
+            println!(
+                "target={:<12} result=EXECUTABLE solution={}",
+                body.id, report.solutions[0].id
+            );
+        }
+    }
+    println!("catalog_bodies={}", catalog.bodies().len());
+    println!("executable={executable}");
+    println!("structured_infeasible={structured_infeasible}");
+    println!("trajectory catalog smoke: PASS");
+    Ok(())
+}
+
+fn trajectory_request(
+    origin: &str,
+    destination: &str,
+    vessel_id: &StableId,
+    minimum_days: f64,
+    maximum_days: f64,
+    departure_samples: u32,
+    duration_samples: u32,
+) -> Result<TransferRequest> {
+    let departure = TdbInstant::from_utc(CalendarDateTime::new(2160, 1, 1, 0, 0, 0, 0)?)?;
+    Ok(TransferRequest {
+        origin_id: StableId::new(origin)?,
+        destination_id: StableId::new(destination)?,
+        departure_window: TimeWindow {
+            earliest: departure,
+            latest: departure.checked_add_micros(30 * MICROS_PER_DAY)?,
+        },
+        duration_window: DurationWindow {
+            minimum_s: minimum_days * 86_400.0,
+            maximum_s: maximum_days * 86_400.0,
+        },
+        vessel_id: vessel_id.clone(),
+        payload_mass_kg: MassKilograms::new(100.0)?,
+        payload_volume_m3: VolumeCubicMeters::new(1.0)?,
+        reserve_policy: ReservePolicy::zero(),
+        arrival_condition: ArrivalCondition::Flyby,
+        options: SolverOptions {
+            departure_samples,
+            duration_samples,
+            maximum_evaluations: departure_samples.saturating_mul(duration_samples),
+            ..SolverOptions::default()
+        },
+    })
 }
 
 fn engineering_audit() -> Result<()> {

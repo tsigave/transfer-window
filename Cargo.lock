@@ -680,6 +680,20 @@ dependencies = [
  "sim-astro",
  "sim-engineering",
  "sim-time",
+ "sim-trajectory",
+]
+
+[[package]]
+name = "sim-trajectory"
+version = "0.1.6"
+dependencies = [
+ "blake3",
+ "serde",
+ "serde_json",
+ "sim-astro",
+ "sim-engineering",
+ "sim-time",
+ "thiserror",
 ]
 
 [[package]]

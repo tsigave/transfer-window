@@ -4,6 +4,7 @@ members = [
   "crates/sim-time",
   "crates/sim-astro",
   "crates/sim-engineering",
+  "crates/sim-trajectory",
   "crates/sim-app",
   "crates/sim-save",
   "crates/sim-tools",
