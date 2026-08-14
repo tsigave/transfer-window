@@ -1,10 +1,11 @@
 # Transfer Window
 
 <!-- transfer-window-current-version -->
-当前项目版本：`v0.1.5`
+当前项目版本：`v0.1.6`
 
-Transfer Window 是一款统一物理事实层上的近未来行星际航运与工业经营游戏。本仓库当前实现
-[alpha-v0.1「完整太阳系」](./docs/roadmap/alpha-v0.1-完整太阳系.md)：可查询、推进和保存的太阳系浏览器。
+Transfer Window 是一款统一物理事实层上的近未来行星际航运与工业经营游戏。本仓库已完成
+[alpha-v0.1「完整太阳系」](./docs/roadmap/alpha-v0.1-完整太阳系.md)，并正在实现
+[alpha-v0.2「可达空间」](./docs/roadmap/alpha-v0.2-可达空间.md)；当前已具备可查询、推进和保存的太阳系浏览器，以及首批舰船工程事实层。
 
 ## 开发
 

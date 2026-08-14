@@ -2,6 +2,7 @@ use anyhow::{bail, Context, Result};
 use clap::{Args, Parser, Subcommand};
 use sim_app::SimulationApp;
 use sim_astro::{Catalog, EphemerisService};
+use sim_engineering::EngineeringCatalog;
 use sim_time::{CalendarDateTime, TdbInstant, MICROS_PER_DAY};
 use std::sync::Arc;
 
@@ -26,6 +27,10 @@ enum Command {
         #[command(subcommand)]
         command: EphemerisCommand,
     },
+    Engineering {
+        #[command(subcommand)]
+        command: EngineeringCommand,
+    },
     Replay {
         #[command(subcommand)]
         command: ReplayCommand,
@@ -40,6 +45,11 @@ enum CatalogCommand {
 #[derive(Debug, Subcommand)]
 enum EphemerisCommand {
     Verify(VerifyArgs),
+}
+
+#[derive(Debug, Subcommand)]
+enum EngineeringCommand {
+    Audit,
 }
 
 #[derive(Debug, Args)]
@@ -67,10 +77,34 @@ fn main() -> Result<()> {
         Command::Ephemeris {
             command: EphemerisCommand::Verify(args),
         } => ephemeris_verify(args.span_years),
+        Command::Engineering {
+            command: EngineeringCommand::Audit,
+        } => engineering_audit(),
         Command::Replay {
             command: ReplayCommand::EmptyWorld(args),
         } => replay_empty_world(&args.rates),
     }
+}
+
+fn engineering_audit() -> Result<()> {
+    let catalog = EngineeringCatalog::bundled().context("load bundled engineering catalog")?;
+    let audit = catalog
+        .audit()
+        .context("audit bundled engineering catalog")?;
+    println!("{}", serde_json::to_string_pretty(&audit)?);
+    println!("blueprints:");
+    for blueprint in catalog.blueprints() {
+        println!(
+            "  {:<30} rev={} role={:<24} dry_mass_kg={:<10.0} basis={:?}",
+            blueprint.id,
+            blueprint.revision,
+            blueprint.role,
+            blueprint.dry_mass_kg.value(),
+            blueprint.engineering_basis,
+        );
+    }
+    println!("engineering catalog audit: PASS");
+    Ok(())
 }
 
 fn catalog_audit() -> Result<()> {

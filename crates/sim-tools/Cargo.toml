@@ -14,5 +14,5 @@ clap.workspace = true
 serde_json.workspace = true
 sim-app = { path = "../sim-app" }
 sim-astro = { path = "../sim-astro" }
+sim-engineering = { path = "../sim-engineering" }
 sim-time = { path = "../sim-time" }
-

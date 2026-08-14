@@ -3,6 +3,7 @@ resolver = "2"
 members = [
   "crates/sim-time",
   "crates/sim-astro",
+  "crates/sim-engineering",
   "crates/sim-app",
   "crates/sim-save",
   "crates/sim-tools",
@@ -10,7 +11,7 @@ members = [
 exclude = ["src-tauri"]
 
 [workspace.package]
-version = "0.1.5"
+version = "0.1.6"
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/tsigave/transfer-window"
@@ -20,6 +21,7 @@ anyhow = "1.0"
 blake3 = "1.5"
 clap = { version = "4.5", features = ["derive"] }
 parking_lot = "0.12"
+proptest = "1.7"
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

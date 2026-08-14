@@ -1,6 +1,6 @@
 [package]
 name = "transfer-window-desktop"
-version = "0.1.5"
+version = "0.1.6"
 description = "Transfer Window alpha-v0.1 desktop boundary"
 authors = ["Transfer Window contributors"]
 edition = "2021"
