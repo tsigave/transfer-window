@@ -10,10 +10,10 @@ members = [
 exclude = ["src-tauri"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.5"
 edition = "2021"
 license = "Apache-2.0"
-repository = "https://github.com/transfer-window/solarstorm"
+repository = "https://github.com/tsigave/transfer-window"
 
 [workspace.dependencies]
 anyhow = "1.0"

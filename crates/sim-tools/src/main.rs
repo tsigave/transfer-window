@@ -9,7 +9,7 @@ use std::sync::Arc;
 #[command(
     name = "sim-tools",
     version,
-    about = "Solarstorm simulation audit tools"
+    about = "Transfer Window simulation audit tools"
 )]
 struct Cli {
     #[command(subcommand)]

@@ -42,7 +42,7 @@ pub fn save_atomic_with_fault(
         .unwrap_or(Path::new("."));
     std::fs::create_dir_all(parent)?;
     let temporary = tempfile::Builder::new()
-        .prefix(".solarstorm-save-")
+        .prefix(".transfer-window-save-")
         .suffix(".sqlite.tmp")
         .tempfile_in(parent)?;
     let temporary_path = temporary.into_temp_path();
@@ -143,7 +143,7 @@ fn create_schema(connection: &Connection) -> Result<(), rusqlite::Error> {
             key TEXT PRIMARY KEY NOT NULL,
             value TEXT NOT NULL
         ) STRICT;
-        INSERT INTO save_metadata (key, value) VALUES ('format', 'solarstorm-sqlite-v1');
+        INSERT INTO save_metadata (key, value) VALUES ('format', 'transfer-window-sqlite-v1');
         CREATE TABLE game_snapshot (
             slot INTEGER PRIMARY KEY CHECK (slot = 1),
             schema_version INTEGER NOT NULL,
@@ -186,7 +186,7 @@ mod tests {
     #[test]
     fn save_load_round_trip_preserves_time_selection_and_hash() {
         let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("campaign.solarstorm");
+        let path = directory.path().join("campaign.transfer-window");
         let mut app = SimulationApp::new_standard_2160().unwrap();
         app.select_body("callisto".parse().unwrap()).unwrap();
         let target =
@@ -206,7 +206,7 @@ mod tests {
     #[test]
     fn interrupted_write_leaves_last_complete_save_loadable() {
         let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("campaign.solarstorm");
+        let path = directory.path().join("campaign.transfer-window");
         let app = SimulationApp::new_standard_2160().unwrap();
         let original = app.snapshot();
         save_atomic(&path, &original).unwrap();
@@ -224,7 +224,7 @@ mod tests {
     #[test]
     fn successful_atomic_replacement_updates_existing_save() {
         let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("campaign.solarstorm");
+        let path = directory.path().join("campaign.transfer-window");
         let mut app = SimulationApp::new_standard_2160().unwrap();
         save_atomic(&path, &app.snapshot()).unwrap();
         app.select_body("triton".parse().unwrap()).unwrap();
@@ -239,7 +239,7 @@ mod tests {
     #[test]
     fn corrupt_save_is_reported_instead_of_reset() {
         let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("campaign.solarstorm");
+        let path = directory.path().join("campaign.transfer-window");
         std::fs::write(&path, b"not sqlite").unwrap();
         assert!(load(&path).is_err());
     }

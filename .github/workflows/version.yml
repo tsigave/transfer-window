@@ -1,0 +1,67 @@
+name: version
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Semantic version component to increment
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      force_patch:
+        description: Release a patch before the 5-change staging threshold
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: version-update
+  cancel-in-progress: false
+
+jobs:
+  update-version:
+    runs-on: ubuntu-latest
+    env:
+      TZ: America/Los_Angeles
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Bump and synchronize version
+        env:
+          BUMP: ${{ inputs.bump }}
+          FORCE_PATCH: ${{ inputs.force_patch }}
+        run: |
+          if [[ "$FORCE_PATCH" == "true" ]]; then
+            npm run version:bump -- "$BUMP" --force
+          else
+            npm run version:bump -- "$BUMP"
+          fi
+      - run: npm run version:check
+      - run: npm run docs:check
+      - name: Read updated version
+        id: version
+        run: echo "value=$(node -p \"require('./package.json').version\")" >> "$GITHUB_OUTPUT"
+      - name: Create version update pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          branch="automation/version-v${VERSION}-${GITHUB_RUN_ID}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add CHANGELOG.md README.md docs/README.md package.json package-lock.json Cargo.toml Cargo.lock src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json
+          git commit -m "chore: bump version to v${VERSION}"
+          git push --set-upstream origin "$branch"
+          gh pr create --title "chore: bump version to v${VERSION}" --body "Automated semantic version update to v${VERSION}." --base "${GITHUB_REF_NAME}" --head "$branch"

@@ -1,13 +1,13 @@
 [package]
-name = "solarstorm-desktop"
-version = "0.1.0"
-description = "Solarstorm alpha-v0.1 desktop boundary"
-authors = ["Solarstorm contributors"]
+name = "transfer-window-desktop"
+version = "0.1.5"
+description = "Transfer Window alpha-v0.1 desktop boundary"
+authors = ["Transfer Window contributors"]
 edition = "2021"
 license = "Apache-2.0"
 
 [lib]
-name = "solarstorm_desktop_lib"
+name = "transfer_window_desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -21,4 +21,3 @@ sim-app = { path = "../crates/sim-app" }
 sim-astro = { path = "../crates/sim-astro" }
 sim-save = { path = "../crates/sim-save" }
 sim-time = { path = "../crates/sim-time" }
-

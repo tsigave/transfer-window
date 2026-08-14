@@ -7,7 +7,8 @@ export interface BrowserSnapshot {
   selectedBodyId: string
 }
 
-const storageKey = 'solarstorm.alpha-v0.1.snapshot'
+const storageKey = 'transfer-window.alpha-v0.1.snapshot'
+const legacyStorageKey = 'solarstorm.alpha-v0.1.snapshot'
 
 function isTauri(): boolean {
   return '__TAURI_INTERNALS__' in window
@@ -22,9 +23,19 @@ export async function saveSnapshot(snapshot: BrowserSnapshot): Promise<void> {
 }
 
 export async function loadSnapshot(): Promise<BrowserSnapshot> {
-  const raw = isTauri()
-    ? await invoke<string>('load_game')
-    : localStorage.getItem(storageKey)
+  let raw: string | null
+  if (isTauri()) {
+    raw = await invoke<string>('load_game')
+  } else {
+    raw = localStorage.getItem(storageKey)
+    if (!raw) {
+      raw = localStorage.getItem(legacyStorageKey)
+      if (raw) {
+        localStorage.setItem(storageKey, raw)
+        localStorage.removeItem(legacyStorageKey)
+      }
+    }
+  }
   if (!raw) throw new Error('SAVE_NOT_FOUND: 尚未创建浏览器存档。')
   let parsed: unknown
   try {
@@ -46,4 +57,3 @@ function isBrowserSnapshot(value: unknown): value is BrowserSnapshot {
     && Number.isFinite(candidate.epochTdbMicros)
     && typeof candidate.selectedBodyId === 'string'
 }
-

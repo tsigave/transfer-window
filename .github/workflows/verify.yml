@@ -22,7 +22,7 @@ jobs:
       - run: npm run test
       - run: npm run build
       - run: npm run docs:check
+      - run: npm run version:check
       - run: cargo run -p sim-tools -- catalog audit
       - run: cargo run -p sim-tools -- ephemeris verify --span-years 200
       - run: cargo run -p sim-tools -- replay empty-world --rates 0,1,100,10000
-

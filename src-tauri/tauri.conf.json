@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Solarstorm",
-  "version": "0.1.0",
-  "identifier": "game.solarstorm.alpha",
+  "productName": "Transfer Window",
+  "version": "0.1.5",
+  "identifier": "game.transferwindow.alpha",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Solarstorm · 太阳系事实层",
+        "title": "Transfer Window · 太阳系事实层",
         "width": 1440,
         "height": 900,
         "minWidth": 1120,
@@ -24,4 +24,3 @@
   },
   "bundle": { "active": false }
 }
-

@@ -1,4 +1,3 @@
 fn main() {
-    solarstorm_desktop_lib::run()
+    transfer_window_desktop_lib::run()
 }
-

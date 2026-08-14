@@ -10,13 +10,19 @@ const AU = 149_597_870_700
 const yearMicros = 365.25 * 86_400 * 1e6
 const formatNumber = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 3 })
 const playbackRates = [1, 10_000, 1_000_000, 100_000_000]
-const planetScaleStorageKey = 'solarstorm.planet-visibility-scale'
+const planetScaleStorageKey = 'transfer-window.planet-visibility-scale'
+const legacyPlanetScaleStorageKey = 'solarstorm.planet-visibility-scale'
 
 function initialPlanetScale(): number {
   if (typeof window === 'undefined') return 1.8
   try {
-    const rawValue = window.localStorage.getItem(planetScaleStorageKey)
+    const currentValue = window.localStorage.getItem(planetScaleStorageKey)
+    const rawValue = currentValue ?? window.localStorage.getItem(legacyPlanetScaleStorageKey)
     if (rawValue === null) return 1.8
+    if (currentValue === null) {
+      window.localStorage.setItem(planetScaleStorageKey, rawValue)
+      window.localStorage.removeItem(legacyPlanetScaleStorageKey)
+    }
     const stored = Number(rawValue)
     return Number.isFinite(stored) ? Math.min(6, Math.max(1, stored)) : 1.8
   } catch {
@@ -164,7 +170,7 @@ export default function App() {
   return (
     <main className="app-shell">
       <header className="topbar">
-        <div className="brand"><span className="brand-mark">S</span><div><b>SOLARSTORM</b><small>太阳系事实层 · alpha v0.1</small></div></div>
+        <div className="brand"><span className="brand-mark">T</span><div><b>TRANSFER WINDOW</b><small>太阳系事实层 · alpha v0.1</small></div></div>
         <div className="clock-block">
           <small>模拟时间 · TDB 内部纪元</small>
           <time>{displayedDate.toISOString().slice(0, 10)} <b>{displayedDate.toISOString().slice(11, 19)}</b></time>
