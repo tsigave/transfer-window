@@ -1,14 +1,14 @@
 import { invoke } from '@tauri-apps/api/core'
 
 export interface BrowserSnapshot {
-  schemaVersion: 1
+  schemaVersion: 2
   contentVersion: string
   epochTdbMicros: number
   selectedBodyId: string
 }
 
-const storageKey = 'transfer-window.alpha-v0.1.snapshot'
-const legacyStorageKey = 'solarstorm.alpha-v0.1.snapshot'
+const storageKey = 'transfer-window.alpha-v0.2.snapshot'
+const legacyStorageKeys = ['transfer-window.alpha-v0.1.snapshot', 'solarstorm.alpha-v0.1.snapshot']
 
 function isTauri(): boolean {
   return '__TAURI_INTERNALS__' in window
@@ -29,10 +29,9 @@ export async function loadSnapshot(): Promise<BrowserSnapshot> {
   } else {
     raw = localStorage.getItem(storageKey)
     if (!raw) {
-      raw = localStorage.getItem(legacyStorageKey)
-      if (raw) {
-        localStorage.setItem(storageKey, raw)
-        localStorage.removeItem(legacyStorageKey)
+      for (const legacyStorageKey of legacyStorageKeys) {
+        raw = localStorage.getItem(legacyStorageKey)
+        if (raw) break
       }
     }
   }
@@ -46,13 +45,17 @@ export async function loadSnapshot(): Promise<BrowserSnapshot> {
   if (!isBrowserSnapshot(parsed)) {
     throw new Error('SAVE_CORRUPT: 存档字段无效，世界未被重置。')
   }
-  return parsed
+  const migrated = parsed.schemaVersion === 1 ? { ...parsed, schemaVersion: 2 as const } : parsed
+  if (!isTauri() && parsed.schemaVersion === 1) {
+    localStorage.setItem(storageKey, JSON.stringify(migrated))
+  }
+  return migrated
 }
 
-function isBrowserSnapshot(value: unknown): value is BrowserSnapshot {
+function isBrowserSnapshot(value: unknown): value is BrowserSnapshot | (Omit<BrowserSnapshot, 'schemaVersion'> & { schemaVersion: 1 }) {
   if (!value || typeof value !== 'object') return false
   const candidate = value as Record<string, unknown>
-  return candidate.schemaVersion === 1
+  return (candidate.schemaVersion === 1 || candidate.schemaVersion === 2)
     && typeof candidate.contentVersion === 'string'
     && Number.isFinite(candidate.epochTdbMicros)
     && typeof candidate.selectedBodyId === 'string'

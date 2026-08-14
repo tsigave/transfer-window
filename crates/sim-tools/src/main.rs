@@ -1,6 +1,6 @@
 use anyhow::{bail, Context, Result};
 use clap::{Args, Parser, Subcommand};
-use sim_app::SimulationApp;
+use sim_app::{ScheduleVoyageCommand, SimulationApp, VoyageStatus};
 use sim_astro::{Catalog, EphemerisService};
 use sim_engineering::{EngineeringCatalog, MassKilograms, ReservePolicy, VolumeCubicMeters};
 use sim_time::{CalendarDateTime, StableId, TdbInstant, MICROS_PER_DAY};
@@ -70,6 +70,7 @@ struct VerifyArgs {
 #[derive(Debug, Subcommand)]
 enum ReplayCommand {
     EmptyWorld(ReplayArgs),
+    Voyage(ReplayArgs),
 }
 
 #[derive(Debug, Subcommand)]
@@ -98,6 +99,9 @@ fn main() -> Result<()> {
         Command::Replay {
             command: ReplayCommand::EmptyWorld(args),
         } => replay_empty_world(&args.rates),
+        Command::Replay {
+            command: ReplayCommand::Voyage(args),
+        } => replay_voyage(&args.rates),
         Command::Trajectory {
             command: TrajectoryCommand::Golden,
         } => trajectory_golden(),
@@ -370,6 +374,53 @@ fn replay_empty_world(rates: &[u32]) -> Result<()> {
         println!("rate={rate:<5} final_hash={hash}");
     }
     println!("empty-world replay: PASS");
+    Ok(())
+}
+
+fn replay_voyage(rates: &[u32]) -> Result<()> {
+    if rates.is_empty() {
+        bail!("at least one playback rate is required");
+    }
+    let mut expected: Option<String> = None;
+    for rate in rates {
+        let mut app = SimulationApp::new_standard_2160()?;
+        let vessel_id = app.primary_vessel()?.id.clone();
+        let mut request = trajectory_request("earth", "moon", &vessel_id, 3.0, 40.0, 2, 5)?;
+        request.arrival_condition = ArrivalCondition::Rendezvous;
+        let report = app.quote_transfer(&request, &CancellationToken::default())?;
+        let solution = report
+            .solutions
+            .first()
+            .ok_or_else(|| anyhow::anyhow!("voyage replay has no executable solution"))?
+            .clone();
+        let arrival = solution.arrival;
+        let receipt = app.schedule_voyage(ScheduleVoyageCommand {
+            command_id: StableId::new("command:replay-voyage")?,
+            expected_world_revision: app.world_revision(),
+            request,
+            solution,
+        })?;
+        app.set_time_rate(*rate)?;
+        app.advance_until(arrival)?;
+        let plan = app
+            .voyage_plans()
+            .get(&receipt.object_id)
+            .ok_or_else(|| anyhow::anyhow!("scheduled voyage disappeared"))?;
+        if plan.status != VoyageStatus::Arrived || !app.execution_diagnostics().is_empty() {
+            bail!("voyage did not arrive inside tolerance at rate {rate}");
+        }
+        let hash = app.snapshot().deterministic_hash()?;
+        if expected.as_ref().is_some_and(|value| value != &hash) {
+            bail!("voyage determinism failure at rate {rate}: {hash}");
+        }
+        expected.get_or_insert_with(|| hash.clone());
+        println!(
+            "rate={rate:<5} propellant_kg={:.6} lifetime_s={:.6} final_hash={hash}",
+            plan.actual_propellant_consumed_kg,
+            plan.actual_reactor_lifetime_used_s + plan.actual_engine_lifetime_used_s,
+        );
+    }
+    println!("voyage replay: PASS");
     Ok(())
 }
 

@@ -1,19 +1,19 @@
 use serde::{Deserialize, Serialize};
-use sim_app::SimulationApp;
+use sim_app::{CancelPlanCommand, ScheduleVoyageCommand, SimulationApp};
 use sim_engineering::{MassKilograms, ReservePolicy, VolumeCubicMeters};
 use sim_time::{StableId, TdbInstant, MICROS_PER_DAY};
 use sim_trajectory::{
-    pareto_front, select_representatives, standard_test_vessel, ArrivalCondition,
-    CancellationToken, DurationWindow, SolverOptions, TimeWindow, TrajectorySolver,
-    TransferRequest,
+    pareto_front, select_representatives, ArrivalCondition, CancellationToken, DurationWindow,
+    SolverOptions, TimeWindow, TrajectorySolver, TransferRequest, TransferSolution,
 };
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager, State};
 
-const SAVE_FILE_NAME: &str = "alpha-v0.1.transfer-window";
-const LEGACY_SAVE_FILE_NAME: &str = "alpha-v0.1.solarstorm";
+const SAVE_FILE_NAME: &str = "alpha-v0.2.transfer-window";
+const LEGACY_TRANSFER_WINDOW_SAVE_FILE_NAME: &str = "alpha-v0.1.transfer-window";
+const LEGACY_SOLARSTORM_SAVE_FILE_NAME: &str = "alpha-v0.1.solarstorm";
 const LEGACY_APP_IDENTIFIER: &str = "game.solarstorm.alpha";
 
 struct AppState(Mutex<SimulationApp>);
@@ -48,6 +48,8 @@ struct PlanTransferResult {
     report: sim_trajectory::TransferSearchReport,
     pareto_solution_ids: Vec<StableId>,
     representatives: Option<sim_trajectory::RepresentativeSolutions>,
+    request: TransferRequest,
+    world_revision: u64,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -131,14 +133,19 @@ fn find_save_path(directory: &Path) -> PathBuf {
     if current.exists() {
         return current;
     }
-    let legacy_in_current_directory = directory.join(LEGACY_SAVE_FILE_NAME);
-    if legacy_in_current_directory.exists() {
-        return legacy_in_current_directory;
+    for legacy_name in [
+        LEGACY_TRANSFER_WINDOW_SAVE_FILE_NAME,
+        LEGACY_SOLARSTORM_SAVE_FILE_NAME,
+    ] {
+        let legacy_in_current_directory = directory.join(legacy_name);
+        if legacy_in_current_directory.exists() {
+            return legacy_in_current_directory;
+        }
     }
     if let Some(data_root) = directory.parent() {
         let legacy_in_previous_app_directory = data_root
             .join(LEGACY_APP_IDENTIFIER)
-            .join(LEGACY_SAVE_FILE_NAME);
+            .join(LEGACY_SOLARSTORM_SAVE_FILE_NAME);
         if legacy_in_previous_app_directory.exists() {
             return legacy_in_previous_app_directory;
         }
@@ -175,6 +182,7 @@ fn load_game(app_handle: AppHandle, state: State<'_, AppState>) -> Result<String
 #[tauri::command]
 async fn plan_transfer(
     app_handle: AppHandle,
+    app_state: State<'_, AppState>,
     state: State<'_, PlannerState>,
     args: PlanTransferArgs,
 ) -> Result<PlanTransferResult, String> {
@@ -185,11 +193,21 @@ async fn plan_transfer(
         .map_err(|_| "PLANNER_STATE_POISONED".to_string())?
         .insert(args.request_id.clone(), cancellation.clone());
     let requests = Arc::clone(&state.0);
+    let (blueprint, vessel, world_revision) = {
+        let app = app_state
+            .0
+            .lock()
+            .map_err(|_| "APP_STATE_POISONED".to_string())?;
+        let vessel = app.primary_vessel().map_err(|error| error.to_string())?.clone();
+        let blueprint = app
+            .blueprint_for_vessel(&vessel)
+            .map_err(|error| error.to_string())?
+            .clone();
+        (blueprint, vessel, app.world_revision())
+    };
     tauri::async_runtime::spawn_blocking(move || {
         let result = (|| {
             let solver = TrajectorySolver::bundled().map_err(|error| error.to_string())?;
-            let (blueprint, vessel) = standard_test_vessel("ship:lunar-courier")
-                .map_err(|error| error.to_string())?;
             let departure = TdbInstant::from_micros_since_j2000(args.departure_tdb_micros);
             let request = TransferRequest {
                 origin_id: StableId::new(args.origin_id.clone())
@@ -250,6 +268,8 @@ async fn plan_transfer(
                     .collect(),
                 report,
                 representatives,
+                request,
+                world_revision,
             })
         })();
         if let Ok(mut active) = requests.lock() {
@@ -259,6 +279,46 @@ async fn plan_transfer(
     })
     .await
     .map_err(|error| format!("PLANNER_TASK_FAILED: {error}"))?
+}
+
+#[tauri::command]
+fn schedule_voyage(
+    state: State<'_, AppState>,
+    command_id: String,
+    expected_world_revision: u64,
+    request: TransferRequest,
+    solution: TransferSolution,
+) -> Result<sim_app::CommandReceipt, String> {
+    state
+        .0
+        .lock()
+        .map_err(|_| "APP_STATE_POISONED".to_string())?
+        .schedule_voyage(ScheduleVoyageCommand {
+            command_id: StableId::new(command_id).map_err(|error| error.to_string())?,
+            expected_world_revision,
+            request,
+            solution,
+        })
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn cancel_voyage_plan(
+    state: State<'_, AppState>,
+    command_id: String,
+    expected_world_revision: u64,
+    plan_id: String,
+) -> Result<sim_app::CommandReceipt, String> {
+    state
+        .0
+        .lock()
+        .map_err(|_| "APP_STATE_POISONED".to_string())?
+        .cancel_plan(CancelPlanCommand {
+            command_id: StableId::new(command_id).map_err(|error| error.to_string())?,
+            expected_world_revision,
+            plan_id: StableId::new(plan_id).map_err(|error| error.to_string())?,
+        })
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -291,7 +351,9 @@ pub fn run() {
             save_game,
             load_game,
             plan_transfer,
-            cancel_transfer
+            cancel_transfer,
+            schedule_voyage,
+            cancel_voyage_plan
         ])
         .run(tauri::generate_context!())
         .expect("error while running Transfer Window");

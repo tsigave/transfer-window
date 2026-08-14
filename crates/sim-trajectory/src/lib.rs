@@ -1056,6 +1056,7 @@ pub fn standard_test_vessel(
             .map_err(|error| TrajectoryError::InvalidRequest(error.to_string()))?,
         blueprint_id: blueprint.id.clone(),
         blueprint_revision: blueprint.revision,
+        state_vector: None,
         payload_mass_kg: MassKilograms::new(0.0)
             .map_err(|error| TrajectoryError::InvalidRequest(error.to_string()))?,
         payload_volume_m3: VolumeCubicMeters::new(0.0)
@@ -1070,6 +1071,7 @@ pub fn standard_test_vessel(
             .map_err(|error| TrajectoryError::InvalidRequest(error.to_string()))?,
         engine_full_power_used_s: DurationSeconds::new(0.0)
             .map_err(|error| TrajectoryError::InvalidRequest(error.to_string()))?,
+        active_plan_id: None,
     };
     Ok((blueprint, vessel))
 }

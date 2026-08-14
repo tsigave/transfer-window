@@ -34,11 +34,11 @@
 
 ## 工作流 D：航行计划与确定性执行
 
-- [ ] 实现 `QuoteTransfer`、`ValidateTransfer`、`ScheduleVoyage` 和 `CancelPlan`。
-- [ ] 提交前重新验证舰船、载荷、出发时刻和输入哈希；过期解以 `SOLUTION_INVALIDATED` 失败且无扣款。
-- [ ] 将批准方案拆成推力、滑行、接近和抵达事件，按事件队列推进。
-- [ ] 执行结束比较计划与实际状态、工质和寿命消耗，超容差时生成诊断而非强行吸附目标。
-- [ ] 航行中保存载入及不同时间倍率产生同样的抵达状态哈希。
+- [x] 实现 `QuoteTransfer`、`ValidateTransfer`、`ScheduleVoyage` 和 `CancelPlan`。
+- [x] 提交前重新验证舰船、载荷、出发时刻和输入哈希；过期解以 `SOLUTION_INVALIDATED` 失败且无扣款。
+- [x] 将批准方案拆成推力、滑行、接近和抵达事件，按事件队列推进。
+- [x] 执行结束比较计划与实际状态、工质和寿命消耗，超容差时生成诊断而非强行吸附目标。
+- [x] 航行中保存载入及不同时间倍率产生同样的抵达状态哈希。
 
 ## 接口与存档变更
 
@@ -50,7 +50,7 @@
 
 - [x] `cargo run -p sim-tools -- trajectory golden` 通过两体、patched-conics 和有限推力金标准。
 - [x] `cargo run -p sim-tools -- trajectory catalog-smoke` 对每个登记天体至少得到结果或结构化不可行原因。
-- [ ] `cargo run -p sim-tools -- replay voyage --rates 1,100,10000` 的抵达状态与消耗一致。
+- [x] `cargo run -p sim-tools -- replay voyage --rates 1,100,10000` 的抵达状态与消耗一致。
 - [ ] 普通地月/地火代表方案在目标硬件 5 秒内出现，超时可取消且无残留任务。
 
 ## 人工验收剧本
@@ -79,3 +79,4 @@
 - 舰船工程事实层：完成工作流 A；证据为 `sim-engineering` 金标准与属性测试，以及 `sim-tools engineering audit` 对四套虚构蓝图的模式审计。
 - 航迹候选与复核：完成工作流 B；`trajectory golden` 验证经典两体、patched-conics、有限推力和独立积分，`trajectory catalog-smoke` 验证全部登记天体的统一请求入口。
 - Pareto 与规划界面：完成工作流 C；Rust 测试证明三类代表解属于真实可执行前沿，React 测试覆盖统一规划入口、服务限制和方案工程展开。
+- 航行计划与执行：完成工作流 D；应用命令测试覆盖安全失效、幂等与取消，航行回放证明跨倍率哈希一致，存档测试证明 schema 1 备份迁移和航行中往返一致。

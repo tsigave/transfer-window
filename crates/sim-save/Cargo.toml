@@ -13,5 +13,6 @@ tempfile.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+sim-engineering = { path = "../sim-engineering" }
 sim-time = { path = "../sim-time" }
-
+sim-trajectory = { path = "../sim-trajectory" }

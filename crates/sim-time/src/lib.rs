@@ -386,6 +386,13 @@ impl EventQueue {
         values.into_iter().map(|value| value.0).collect()
     }
 
+    pub fn retain<F>(&mut self, mut keep: F)
+    where
+        F: FnMut(&ScheduledEvent) -> bool,
+    {
+        self.0 = self.0.drain().filter(|event| keep(&event.0)).collect();
+    }
+
     pub fn len(&self) -> usize {
         self.0.len()
     }

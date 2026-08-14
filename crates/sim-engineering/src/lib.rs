@@ -1,6 +1,7 @@
 //! Deterministic spacecraft engineering facts and constraint evaluation.
 
 use serde::{Deserialize, Serialize};
+use sim_astro::StateVector;
 use sim_time::StableId;
 use std::collections::BTreeSet;
 
@@ -307,6 +308,8 @@ pub struct VesselState {
     pub id: StableId,
     pub blueprint_id: StableId,
     pub blueprint_revision: u32,
+    #[serde(default)]
+    pub state_vector: Option<StateVector>,
     pub payload_mass_kg: MassKilograms,
     pub payload_volume_m3: VolumeCubicMeters,
     pub fusion_fuel_kg: MassKilograms,
@@ -315,6 +318,8 @@ pub struct VesselState {
     pub current_continuous_burn_s: DurationSeconds,
     pub reactor_full_power_used_s: DurationSeconds,
     pub engine_full_power_used_s: DurationSeconds,
+    #[serde(default)]
+    pub active_plan_id: Option<StableId>,
 }
 
 impl VesselState {
@@ -872,6 +877,7 @@ mod tests {
             id: StableId::new("vessel:test").unwrap(),
             blueprint_id: blueprint.id.clone(),
             blueprint_revision: blueprint.revision,
+            state_vector: None,
             payload_mass_kg: MassKilograms::new(blueprint.cargo_capacity.mass_kg.value() * 0.5)
                 .unwrap(),
             payload_volume_m3: VolumeCubicMeters::new(
@@ -884,6 +890,7 @@ mod tests {
             current_continuous_burn_s: DurationSeconds::new(0.0).unwrap(),
             reactor_full_power_used_s: DurationSeconds::new(0.0).unwrap(),
             engine_full_power_used_s: DurationSeconds::new(0.0).unwrap(),
+            active_plan_id: None,
         }
     }
 

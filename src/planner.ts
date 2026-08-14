@@ -96,6 +96,8 @@ export interface PlanTransferResult {
   }
   paretoSolutionIds: string[]
   representatives: { fastest: string; balanced: string; efficient: string } | null
+  request: unknown | null
+  worldRevision: number
 }
 
 function isTauri(): boolean {
@@ -120,6 +122,21 @@ export async function queryTransferPlans(
     signal.removeEventListener('abort', cancel)
     unlisten()
   }
+}
+
+export async function scheduleVoyagePlan(
+  planning: PlanTransferResult,
+  solution: PlannerSolution,
+): Promise<{ command_id: string; object_id: string; world_revision: number }> {
+  if (!isTauri() || !planning.request) {
+    throw new Error('SUBMISSION_UNAVAILABLE: 浏览器预览不能提交航行计划；请在桌面应用中使用 Rust 执行级结果。')
+  }
+  return invoke('schedule_voyage', {
+    commandId: `command:schedule-${Date.now().toString(36)}`,
+    expectedWorldRevision: planning.worldRevision,
+    request: planning.request,
+    solution,
+  })
 }
 
 export function paretoSolutionIds(solutions: PlannerSolution[]): string[] {
@@ -206,6 +223,8 @@ async function browserPreview(
           report: { input_hash: browserHash(args), solutions, failures, evaluated, planned, status: 'cancelled', termination_reason: 'CANCELLED' },
           paretoSolutionIds: ids,
           representatives: selectPlannerRepresentatives(solutions, ids),
+          request: null,
+          worldRevision: 0,
         }
       }
       const departure = args.departureTdbMicros + offset * DAY_MICROS
@@ -277,6 +296,8 @@ async function browserPreview(
     report: { input_hash: browserHash(args), solutions, failures, evaluated, planned, status: 'completed', termination_reason: solutions.length ? 'CONVERGED' : 'CONSTRAINT_VIOLATION' },
     paretoSolutionIds: ids,
     representatives: selectPlannerRepresentatives(solutions, ids),
+    request: null,
+    worldRevision: 0,
   }
 }
 

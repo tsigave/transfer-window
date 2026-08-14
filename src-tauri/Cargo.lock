@@ -2943,7 +2943,9 @@ dependencies = [
  "serde",
  "serde_json",
  "sim-astro",
+ "sim-engineering",
  "sim-time",
+ "sim-trajectory",
  "thiserror 2.0.20",
 ]
 
@@ -2968,6 +2970,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_path_to_error",
+ "sim-astro",
  "sim-time",
  "thiserror 2.0.20",
 ]
