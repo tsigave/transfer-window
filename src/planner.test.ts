@@ -1,5 +1,12 @@
-import { describe, expect, it } from 'vitest'
-import { paretoSolutionIds, selectPlannerRepresentatives, type PlannerSolution } from './planner'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import {
+  paretoSolutionIds,
+  queryTransferPlans,
+  selectPlannerRepresentatives,
+  type PlannerSolution,
+} from './planner'
+
+afterEach(() => vi.unstubAllGlobals())
 
 function solution(
   id: string,
@@ -53,5 +60,41 @@ describe('trajectory Pareto adapter', () => {
     expect(frontier).toContain(representatives.fastest)
     expect(frontier).toContain(representatives.balanced)
     expect(frontier).toContain(representatives.efficient)
+  })
+
+  it('returns the authoritative result from the HTTP job status path', async () => {
+    const authoritativeSolution = solution('authoritative', 10, 100, 100, 500)
+    authoritativeSolution.metadata.solver_version = 'transfer-window-trajectory-v1'
+    const result = {
+      report: {
+        input_hash: 'hash', solutions: [authoritativeSolution], failures: [], evaluated: 1, planned: 1,
+        status: 'completed', termination_reason: 'CONVERGED',
+      },
+      paretoSolutionIds: ['authoritative'],
+      representatives: { fastest: 'authoritative', balanced: 'authoritative', efficient: 'authoritative' },
+      request: { origin_id: 'earth', destination_id: 'moon' },
+      worldRevision: 0,
+    }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        requestId: 'planner-test', eventsUrl: '/api/v1/trajectory/jobs/planner-test/events',
+      }), { status: 202, headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        requestId: 'planner-test', state: 'completed',
+        progress: { requestId: 'planner-test', evaluated: 1, planned: 1, executableSolutions: 1, status: 'completed' },
+        result, error: null,
+      }), { status: 200, headers: { 'content-type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+    vi.stubGlobal('EventSource', undefined)
+
+    const progress = vi.fn()
+    const response = await queryTransferPlans({
+      requestId: 'planner-test', originId: 'earth', destinationId: 'moon', departureTdbMicros: 0,
+      payloadMassKg: 1_000, payloadVolumeM3: 10, minimumDurationDays: 3, maximumDurationDays: 40,
+    }, progress, new AbortController().signal)
+
+    expect(response.report.solutions[0].metadata.solver_version).toBe('transfer-window-trajectory-v1')
+    expect(progress).toHaveBeenCalledWith(expect.objectContaining({ executableSolutions: 1 }))
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/v1/trajectory/jobs', expect.objectContaining({ method: 'POST' }))
   })
 })

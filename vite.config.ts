@@ -4,8 +4,12 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   clearScreen: false,
-  server: { port: 1420, strictPort: true },
-  envPrefix: ['VITE_', 'TAURI_'],
+  server: {
+    port: 1420,
+    strictPort: true,
+    proxy: { '/api': 'http://127.0.0.1:3000' },
+  },
+  envPrefix: ['VITE_'],
   build: {
     target: ['es2021', 'chrome105', 'safari13'],
     chunkSizeWarningLimit: 650,

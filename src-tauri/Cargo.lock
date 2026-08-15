@@ -2937,7 +2937,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "sim-app"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "blake3",
  "serde",
@@ -2951,7 +2951,7 @@ dependencies = [
 
 [[package]]
 name = "sim-astro"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "blake3",
  "parking_lot",
@@ -2964,7 +2964,7 @@ dependencies = [
 
 [[package]]
 name = "sim-engineering"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "blake3",
  "serde",
@@ -2977,7 +2977,7 @@ dependencies = [
 
 [[package]]
 name = "sim-save"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "blake3",
  "rusqlite",
@@ -2989,7 +2989,7 @@ dependencies = [
 
 [[package]]
 name = "sim-time"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -2998,7 +2998,7 @@ dependencies = [
 
 [[package]]
 name = "sim-trajectory"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "blake3",
  "serde",
@@ -3803,7 +3803,7 @@ dependencies = [
 
 [[package]]
 name = "transfer-window-desktop"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "serde",
  "serde_json",

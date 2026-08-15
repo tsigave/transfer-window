@@ -3,7 +3,7 @@ import { SolarMap, type CameraAction } from './SolarMap'
 import { bodyById, catalog, childrenOf, dateFromEpoch, epochFromDate, heliocentricState, searchBodies, type Body } from './model'
 import { loadSnapshot, saveSnapshot } from './persistence'
 import { queryTransferPlans, scheduleVoyagePlan, type PlanTransferResult, type PlannerProgress } from './planner'
-import { queryBodyState } from './runtime'
+import { advanceSimulation, queryBodyState } from './runtime'
 import './styles.css'
 
 const initialDate = new Date('2160-01-01T00:00:00.000Z')
@@ -180,6 +180,17 @@ export default function App() {
     setEpochTdbMicros(update)
   }
 
+  async function executeUntilDisplayedTime() {
+    setTimeRate(0)
+    setError(null)
+    try {
+      await advanceSimulation(epochTdbMicros)
+      setNotice('权威世界已按确定性事件队列执行到当前显示时刻')
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
+    }
+  }
+
   async function save() {
     setError(null)
     try {
@@ -235,7 +246,9 @@ export default function App() {
       setPlannerResult(result)
       setPlannerSolutionId(result.representatives?.balanced ?? result.paretoSolutionIds[0] ?? null)
     } catch (reason) {
-      setPlannerError(reason instanceof Error ? reason.message : String(reason))
+      if (!controller.signal.aborted) {
+        setPlannerError(reason instanceof Error ? reason.message : String(reason))
+      }
     } finally {
       if (plannerAbort.current === controller) plannerAbort.current = null
     }
@@ -344,6 +357,7 @@ export default function App() {
           <input aria-label="时间轴" type="range" min={-10} max={10} step={0.1} value={(epochTdbMicros - epochFromDate(initialDate)) / yearMicros} onChange={(event) => { setTimeRate(0); setEpochTdbMicros(epochFromDate(initialDate) + Number(event.target.value) * yearMicros) }} />
           <button onClick={() => jumpTime((value) => shiftCalendarYears(value, 1))}>+ 1 年</button>
           <button className="decade" onClick={() => jumpTime((value) => shiftCalendarYears(value, 10))}>推进十年</button>
+          <button className="decade" onClick={() => void executeUntilDisplayedTime()}>执行至此</button>
         </div>
       </section>
 
@@ -414,14 +428,14 @@ export default function App() {
                 <div className="engineering-cards"><div><small>质量预算</small><b>{formatNumber.format(plannerSolution.propellant_consumed_kg)} kg 工质</b><span>{plannerSolution.fusion_fuel_consumed_kg.toFixed(3)} kg 聚变燃料</span></div><div><small>功率 / 热峰值</small><b>{(plannerSolution.peak_power_w / 1e9).toFixed(3)} GW</b><span>{(plannerSolution.peak_waste_heat_w / 1e6).toFixed(1)} MW 废热</span></div><div><small>复核误差余量</small><b>{formatNumber.format(plannerSolution.margins.position_error_m)} m</b><span>{plannerSolution.margins.velocity_error_mps.toFixed(4)} m/s</span></div></div>
                 <ol className="segment-list">{plannerSolution.segments.map((segment, index) => <li key={`${segment.kind}-${index}`}><b>{segment.kind.replaceAll('_', ' ')}</b><span>{segment.phase ?? (segment.kind === 'coast' ? '日心滑行' : '抵达复核')}</span><em>{segment.powered_duration_s ? `${(segment.powered_duration_s / 3600).toFixed(1)} h · ${segment.chunk_count} 段` : segment.planned_position_error_m ? `${segment.planned_position_error_m.toFixed(1)} m` : '状态矢量已记录'}</em></li>)}</ol>
                 <p className="solver-meta">输入 {plannerSolution.metadata.input_hash.slice(0, 16)}… · {plannerSolution.metadata.solver_version} · Lambert {plannerSolution.metadata.lambert_iterations} 次 · 积分 {plannerSolution.metadata.integrator_accepted_steps} 步 · 容差 {formatNumber.format(plannerSolution.metadata.position_tolerance_m)} m / {plannerSolution.metadata.velocity_tolerance_mps} m/s</p>
-                <div className="schedule-row"><button disabled={!plannerResult?.request || Boolean(plannerSubmission)} title={plannerResult?.request ? '提交前由 Rust 重新验证舰船、载荷、时刻与输入哈希' : '浏览器预览不能提交；桌面应用使用 Rust 执行级结果'} onClick={() => void submitVoyage()}>批准并排期</button><span>{plannerSubmission ?? (plannerResult?.request ? '提交将创建推力、滑行、接近与抵达事件。' : '浏览器预览模式 · 无世界副作用')}</span></div>
+                <div className="schedule-row"><button disabled={Boolean(plannerSubmission)} title="提交前由 Rust 服务重新验证舰船、载荷、时刻与输入哈希" onClick={() => void submitVoyage()}>批准并排期</button><span>{plannerSubmission ?? '提交将通过权威 API 创建推力、滑行、接近与抵达事件。'}</span></div>
               </> : <div className="empty-state">从热图或 Pareto 表中选择一个可执行方案查看推力段、状态矢量、质量、功率、热峰值和误差余量。</div>}
             </section>
           </div>
         </section>
       )}
 
-      {(notice || error) && <div className={error ? 'toast error' : 'toast'} role="status"><button onClick={() => { setNotice(null); setError(null) }}>×</button><b>{error ? '存档操作失败' : '完成'}</b><span>{error ?? notice}</span></div>}
+      {(notice || error) && <div className={error ? 'toast error' : 'toast'} role="status"><button onClick={() => { setNotice(null); setError(null) }}>×</button><b>{error ? '操作失败' : '完成'}</b><span>{error ?? notice}</span></div>}
     </main>
   )
 }

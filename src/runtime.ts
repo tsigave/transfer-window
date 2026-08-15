@@ -1,27 +1,26 @@
-import { invoke } from '@tauri-apps/api/core'
-import { catalog, heliocentricState, type StateVector } from './model'
+import { apiRequest } from './api'
+import type { StateVector } from './model'
 
 interface RuntimeBodyState extends StateVector {
   body_id: string
 }
 
-function isTauri(): boolean {
-  return '__TAURI_INTERNALS__' in window
-}
-
 export async function queryBodyState(bodyId: string, epochTdbMicros: number): Promise<StateVector> {
-  if (isTauri()) {
-    return invoke<RuntimeBodyState>('body_state', { bodyId, epochTdbMicros })
-  }
-  const body = catalog.bodies.find((candidate) => candidate.id === bodyId)
-  if (!body) throw new Error(`BODY_NOT_FOUND: ${bodyId}`)
-  return heliocentricState(body, epochTdbMicros)
+  return apiRequest<RuntimeBodyState>(
+    `/api/v1/bodies/${encodeURIComponent(bodyId)}/state?epochTdbMicros=${encodeURIComponent(epochTdbMicros)}`,
+  )
 }
 
 export async function queryMapSample(epochTdbMicros: number): Promise<Map<string, StateVector>> {
-  const states = isTauri()
-    ? await invoke<RuntimeBodyState[]>('map_sample', { epochTdbMicros })
-    : catalog.bodies.map((body) => ({ body_id: body.id, ...heliocentricState(body, epochTdbMicros) }))
+  const states = await apiRequest<RuntimeBodyState[]>(
+    `/api/v1/map-sample?epochTdbMicros=${encodeURIComponent(epochTdbMicros)}`,
+  )
   return new Map(states.map((state) => [state.body_id, state]))
 }
 
+export async function advanceSimulation(targetTdbMicros: number): Promise<void> {
+  await apiRequest('/api/v1/simulation/advance', {
+    method: 'POST',
+    body: JSON.stringify({ targetTdbMicros }),
+  })
+}

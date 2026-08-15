@@ -1,21 +1,21 @@
 {
   "name": "transfer-window",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "vite",
+    "dev:server": "cargo run -p sim-server",
     "build": "tsc -b && vite build",
     "lint": "eslint . --max-warnings 0",
     "test": "vitest run",
     "docs:check": "node scripts/check-doc-links.mjs && node scripts/check-domain-deps.mjs",
     "version:set": "node scripts/version.mjs set",
     "version:bump": "node scripts/version.mjs bump",
-    "version:check": "node scripts/version.mjs check",
-    "tauri": "tauri"
+    "version:check": "node scripts/version.mjs check"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.8.0",
     "@vitejs/plugin-react": "^5.0.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
@@ -24,7 +24,6 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.33.0",
-    "@tauri-apps/cli": "^2.11.4",
     "@testing-library/jest-dom": "^6.6.4",
     "@testing-library/react": "^16.3.0",
     "@types/node": "^24.2.1",

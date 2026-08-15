@@ -1,7 +1,7 @@
 # Transfer Window
 
 <!-- transfer-window-current-version -->
-当前项目版本：`v0.2.0`
+当前项目版本：`v0.2.1`
 
 Transfer Window 是一款统一物理事实层上的近未来行星际航运与工业经营游戏。本仓库已完成
 [alpha-v0.1「完整太阳系」](./docs/roadmap/alpha-v0.1-完整太阳系.md)与
@@ -10,12 +10,22 @@ Transfer Window 是一款统一物理事实层上的近未来行星际航运与�
 ## 开发
 
 ```bash
-cargo test --workspace
 npm install
 npm run dev
 ```
 
-完整验收命令见 [alpha-v0.2 验收记录](./docs/acceptance/alpha-v0.2.md)。
+`npm run dev` 同时启动权威 Rust API（`http://127.0.0.1:3000`）和 React 网页（`http://localhost:1420`）。也可以分别运行 `npm run dev:server` 与 `npm run dev:web`。
+
+生产构建：
+
+```bash
+cargo build -p sim-server --release
+npm run build
+```
+
+网页端通过版本化 `/api/v1` 使用完整 Rust 事实层、航迹求解、航行命令和 SQLite 存档，不包含 TypeScript 物理替代实现。部署参数及反向代理要求见[网页前后端技术指导](./docs/07-v0.2-网页前后端分离.md)。Tauri 边界源码暂时保留，但不作为当前发行目标。
+
+完整验收命令见 [v0.2.1 验收记录](./docs/acceptance/v0.2.1.md)。
 版本演进记录见 [更新日志](./CHANGELOG.md)。
 
-版本升级通过 GitHub Actions 的 `version` 工作流完成；本地可运行 `npm run version:check` 检查版本同步状态，运行 `npm run tauri build` 生成当前平台的桌面发行包。公开分发的签名与公证由持有渠道凭据的发布环境完成。
+版本升级通过 GitHub Actions 的 `version` 工作流完成；本地可运行 `npm run version:check` 检查版本同步状态。

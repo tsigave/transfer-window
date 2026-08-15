@@ -1,8 +1,4 @@
-import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
-import { bodyById, heliocentricState } from './model'
-
-const DAY_MICROS = 86_400 * 1e6
+import { apiRequest, apiUrl } from './api'
 
 export interface PlannerArgs {
   requestId: string
@@ -96,12 +92,26 @@ export interface PlanTransferResult {
   }
   paretoSolutionIds: string[]
   representatives: { fastest: string; balanced: string; efficient: string } | null
-  request: unknown | null
+  request: unknown
   worldRevision: number
 }
 
-function isTauri(): boolean {
-  return '__TAURI_INTERNALS__' in window
+interface CreatedJob {
+  requestId: string
+  eventsUrl: string
+}
+
+interface PlannerJobView {
+  requestId: string
+  state: 'running' | 'completed' | 'cancelled' | 'failed'
+  progress: PlannerProgress
+  result: PlanTransferResult | null
+  error: { code: string; message: string } | null
+}
+
+interface PlannerEventEnvelope {
+  type: 'progress' | 'complete' | 'cancelled' | 'failed'
+  payload?: PlannerProgress | { code: string; message: string }
 }
 
 export async function queryTransferPlans(
@@ -109,18 +119,44 @@ export async function queryTransferPlans(
   onProgress: (progress: PlannerProgress) => void,
   signal: AbortSignal,
 ): Promise<PlanTransferResult> {
-  if (!isTauri()) return browserPreview(args, onProgress, signal)
-
-  const unlisten = await listen<PlannerProgress>('trajectory-progress', ({ payload }) => {
-    if (payload.requestId === args.requestId) onProgress(payload)
+  const created = await apiRequest<CreatedJob>('/api/v1/trajectory/jobs', {
+    method: 'POST',
+    body: JSON.stringify(args),
+    signal,
   })
-  const cancel = () => { void invoke('cancel_transfer', { requestId: args.requestId }) }
+  const cancel = () => {
+    void apiRequest<void>(`/api/v1/trajectory/jobs/${encodeURIComponent(created.requestId)}`, {
+      method: 'DELETE',
+    }).catch(() => undefined)
+  }
   signal.addEventListener('abort', cancel, { once: true })
+  const source = typeof EventSource === 'undefined' ? null : new EventSource(apiUrl(created.eventsUrl))
+  source?.addEventListener('progress', (event) => {
+    try {
+      const envelope = JSON.parse((event as MessageEvent<string>).data) as PlannerEventEnvelope
+      if (envelope.type === 'progress') onProgress(envelope.payload as PlannerProgress)
+    } catch {
+      // Polling below remains authoritative if an intermediary corrupts an SSE event.
+    }
+  })
   try {
-    return await invoke<PlanTransferResult>('plan_transfer', { args })
+    while (true) {
+      if (signal.aborted) throw new DOMException('trajectory request cancelled', 'AbortError')
+      const job = await apiRequest<PlannerJobView>(
+        `/api/v1/trajectory/jobs/${encodeURIComponent(created.requestId)}`,
+        { signal },
+      )
+      onProgress(job.progress)
+      if (job.state === 'completed' && job.result) return job.result
+      if (job.state === 'cancelled') throw new DOMException('trajectory request cancelled', 'AbortError')
+      if (job.state === 'failed') {
+        throw new Error(`${job.error?.code ?? 'TRAJECTORY_FAILED'}: ${job.error?.message ?? '航迹任务失败'}`)
+      }
+      await wait(40, signal)
+    }
   } finally {
     signal.removeEventListener('abort', cancel)
-    unlisten()
+    source?.close()
   }
 }
 
@@ -128,14 +164,14 @@ export async function scheduleVoyagePlan(
   planning: PlanTransferResult,
   solution: PlannerSolution,
 ): Promise<{ command_id: string; object_id: string; world_revision: number }> {
-  if (!isTauri() || !planning.request) {
-    throw new Error('SUBMISSION_UNAVAILABLE: 浏览器预览不能提交航行计划；请在桌面应用中使用 Rust 执行级结果。')
-  }
-  return invoke('schedule_voyage', {
-    commandId: `command:schedule-${Date.now().toString(36)}`,
-    expectedWorldRevision: planning.worldRevision,
-    request: planning.request,
-    solution,
+  return apiRequest('/api/v1/voyages', {
+    method: 'POST',
+    body: JSON.stringify({
+      commandId: `command:schedule-${Date.now().toString(36)}`,
+      expectedWorldRevision: planning.worldRevision,
+      request: planning.request,
+      solution,
+    }),
   })
 }
 
@@ -193,114 +229,16 @@ function dominates(left: PlannerSolution, right: PlannerSolution): boolean {
   return noWorse && better
 }
 
-async function browserPreview(
-  args: PlannerArgs,
-  onProgress: (progress: PlannerProgress) => void,
-  signal: AbortSignal,
-): Promise<PlanTransferResult> {
-  const origin = bodyById.get(args.originId)
-  const destination = bodyById.get(args.destinationId)
-  if (!origin || !destination || origin.id === destination.id) {
-    throw new Error('INVALID_REQUEST: 始发与目标必须是两个已登记的不同天体。')
-  }
-  if (args.payloadMassKg < 0 || args.payloadMassKg > 120_000 || args.payloadVolumeM3 < 0 || args.payloadVolumeM3 > 650) {
-    throw new Error('CONSTRAINT_VIOLATION: 载荷超过 Lunar Courier 的 120,000 kg / 650 m³ 舱容。')
-  }
-
-  const departureOffsets = [0, 15, 30]
-  const durationDays = Array.from({ length: 5 }, (_, index) =>
-    args.minimumDurationDays + (args.maximumDurationDays - args.minimumDurationDays) * index / 4)
-  const planned = departureOffsets.length * durationDays.length
-  const solutions: PlannerSolution[] = []
-  const failures: PlannerFailure[] = []
-  let evaluated = 0
-
-  for (const offset of departureOffsets) {
-    for (const days of durationDays) {
-      if (signal.aborted) {
-        const ids = paretoSolutionIds(solutions)
-        return {
-          report: { input_hash: browserHash(args), solutions, failures, evaluated, planned, status: 'cancelled', termination_reason: 'CANCELLED' },
-          paretoSolutionIds: ids,
-          representatives: selectPlannerRepresentatives(solutions, ids),
-          request: null,
-          worldRevision: 0,
-        }
-      }
-      const departure = args.departureTdbMicros + offset * DAY_MICROS
-      const arrival = departure + days * DAY_MICROS
-      const originState = heliocentricState(origin, departure)
-      const destinationState = heliocentricState(destination, arrival)
-      const distance = Math.hypot(...destinationState.position_m.map((value, index) => value - originState.position_m[index]))
-      const relativeVelocity = Math.hypot(...destinationState.velocity_mps.map((value, index) => value - originState.velocity_mps[index]))
-      const requiredDeltaV = Math.max(350, distance / (days * 86_400) * 0.075 + relativeVelocity * 0.12)
-      const initialMass = 420_000 + 300_000 + 600 + args.payloadMassKg
-      const propellant = initialMass * (1 - Math.exp(-requiredDeltaV / 250_000))
-      const massFlow = 2 * 0.72 * 1e9 / 250_000 ** 2
-      const poweredDuration = propellant / massFlow
-      const feasible = propellant < 285_000 && poweredDuration < days * 86_400 * 0.5
-      evaluated += 1
-      if (feasible) {
-        const fusionFuel = (1.03e9 * poweredDuration) / 1e14
-        const lifetime = poweredDuration * 1e9 / 1.2e9
-        const positionError = 120 + ((offset + days) % 17) * 11
-        const velocityError = 0.04 + ((offset + days) % 7) * 0.01
-        const id = `preview:${offset}:${Math.round(days * 10)}`
-        solutions.push({
-          id,
-          departure,
-          arrival,
-          time_of_flight_s: days * 86_400,
-          payload_mass_kg: args.payloadMassKg,
-          propellant_consumed_kg: propellant,
-          fusion_fuel_consumed_kg: fusionFuel,
-          peak_power_w: 1.03e9,
-          peak_waste_heat_w: 639.6e6,
-          reactor_lifetime_used_s: lifetime,
-          engine_lifetime_used_s: poweredDuration,
-          estimated_cost_credits: propellant * 2 + fusionFuel * 1_000 + (lifetime + poweredDuration) * 0.05,
-          margins: {
-            position_error_m: positionError,
-            velocity_error_mps: velocityError,
-            propellant_remaining_kg: 300_000 - propellant,
-            fusion_fuel_remaining_kg: 600 - fusionFuel,
-            reactor_lifetime_remaining_s: 252_460_800 - lifetime,
-            engine_lifetime_remaining_s: 126_230_400 - poweredDuration,
-          },
-          destination_services: { market: false, propellant_supply: false, repair: false },
-          validation_level: 'executable',
-          metadata: {
-            input_hash: browserHash(args), solver_version: 'browser-preview-v1', lambert_iterations: 0,
-            integrator_accepted_steps: 0, integrator_rejected_steps: 0,
-            position_tolerance_m: 2_000_000, velocity_tolerance_mps: 2, termination_reason: 'CONVERGED',
-          },
-          segments: [
-            { kind: 'finite_burn', phase: 'departure', start: departure, end: departure + poweredDuration * 1e6, target_delta_v_mps: requiredDeltaV, thrust_n: 5_760, input_power_w: 1e9, powered_duration_s: poweredDuration, chunk_count: Math.max(1, Math.ceil(poweredDuration / 21_600)), initial_mass_kg: initialMass, final_mass_kg: initialMass - propellant - fusionFuel, peak_waste_heat_w: 639.6e6 },
-            { kind: 'coast', start: departure + poweredDuration * 1e6, end: arrival },
-            { kind: 'approach', start: arrival, end: arrival, planned_position_error_m: positionError, planned_velocity_error_mps: velocityError },
-          ],
-        })
-      } else {
-        failures.push({
-          departure, duration_s: days * 86_400, kind: 'constraint_violation',
-          message: '有限推力机动超过工质或航程占比限制。',
-          constraints: [{ code: 'FINITE_THRUST_DURATION', field: 'powered_duration_s', required: poweredDuration, available: days * 86_400 * 0.5, unit: 's' }],
-        })
-      }
-      onProgress({ requestId: args.requestId, evaluated, planned, executableSolutions: solutions.length, status: 'completed' })
-      await new Promise((resolve) => window.setTimeout(resolve, 4))
+function wait(milliseconds: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const abort = () => {
+      window.clearTimeout(timeout)
+      reject(new DOMException('trajectory request cancelled', 'AbortError'))
     }
-  }
-  const ids = paretoSolutionIds(solutions)
-  return {
-    report: { input_hash: browserHash(args), solutions, failures, evaluated, planned, status: 'completed', termination_reason: solutions.length ? 'CONVERGED' : 'CONSTRAINT_VIOLATION' },
-    paretoSolutionIds: ids,
-    representatives: selectPlannerRepresentatives(solutions, ids),
-    request: null,
-    worldRevision: 0,
-  }
-}
-
-function browserHash(args: PlannerArgs): string {
-  return `preview-${args.originId}-${args.destinationId}-${Math.round(args.departureTdbMicros)}`
+    const timeout = window.setTimeout(() => {
+      signal.removeEventListener('abort', abort)
+      resolve()
+    }, milliseconds)
+    signal.addEventListener('abort', abort, { once: true })
+  })
 }

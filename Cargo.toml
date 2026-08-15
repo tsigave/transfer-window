@@ -7,20 +7,24 @@ members = [
   "crates/sim-trajectory",
   "crates/sim-app",
   "crates/sim-save",
+  "crates/sim-server",
   "crates/sim-tools",
 ]
 exclude = ["src-tauri"]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/tsigave/transfer-window"
 
 [workspace.dependencies]
 anyhow = "1.0"
+async-stream = "0.3"
+axum = "0.8.9"
 blake3 = "1.5"
 clap = { version = "4.5", features = ["derive"] }
+futures-core = "0.3"
 parking_lot = "0.12"
 proptest = "1.7"
 rusqlite = { version = "0.32", features = ["bundled"] }
@@ -29,3 +33,5 @@ serde_json = { version = "1.0", features = ["float_roundtrip"] }
 serde_path_to_error = "0.1"
 tempfile = "3.12"
 thiserror = "2.0"
+tokio = { version = "1.53", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+tower-http = { version = "0.6", features = ["cors"] }

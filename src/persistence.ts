@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core'
+import { apiRequest } from './api'
 
 export interface BrowserSnapshot {
   schemaVersion: 2
@@ -7,55 +7,55 @@ export interface BrowserSnapshot {
   selectedBodyId: string
 }
 
-const storageKey = 'transfer-window.alpha-v0.2.snapshot'
-const legacyStorageKeys = ['transfer-window.alpha-v0.1.snapshot', 'solarstorm.alpha-v0.1.snapshot']
-
-function isTauri(): boolean {
-  return '__TAURI_INTERNALS__' in window
-}
+const legacyStorageKeys = [
+  'transfer-window.alpha-v0.2.snapshot',
+  'transfer-window.alpha-v0.1.snapshot',
+  'solarstorm.alpha-v0.1.snapshot',
+]
 
 export async function saveSnapshot(snapshot: BrowserSnapshot): Promise<void> {
-  if (isTauri()) {
-    await invoke('save_game', { viewState: snapshot })
-    return
-  }
-  localStorage.setItem(storageKey, JSON.stringify(snapshot))
+  await apiRequest<BrowserSnapshot>('/api/v1/saves/default', {
+    method: 'POST',
+    body: JSON.stringify(snapshot),
+  })
 }
 
 export async function loadSnapshot(): Promise<BrowserSnapshot> {
-  let raw: string | null
-  if (isTauri()) {
-    raw = await invoke<string>('load_game')
-  } else {
-    raw = localStorage.getItem(storageKey)
-    if (!raw) {
-      for (const legacyStorageKey of legacyStorageKeys) {
-        raw = localStorage.getItem(legacyStorageKey)
-        if (raw) break
-      }
-    }
-  }
-  if (!raw) throw new Error('SAVE_NOT_FOUND: 尚未创建浏览器存档。')
-  let parsed: unknown
+  let snapshot: BrowserSnapshot
   try {
-    parsed = JSON.parse(raw)
-  } catch {
-    throw new Error('SAVE_CORRUPT: 存档不是有效 JSON，世界未被重置。')
+    snapshot = await apiRequest<BrowserSnapshot>('/api/v1/saves/default')
+  } catch (reason) {
+    if (!(reason instanceof Error) || !reason.message.startsWith('SAVE_NOT_FOUND:')) throw reason
+    const legacy = readLegacyBrowserSnapshot()
+    if (!legacy) throw reason
+    snapshot = { ...legacy, schemaVersion: 2 }
+    await saveSnapshot(snapshot)
   }
-  if (!isBrowserSnapshot(parsed)) {
-    throw new Error('SAVE_CORRUPT: 存档字段无效，世界未被重置。')
+  if (!isBrowserSnapshot(snapshot)) {
+    throw new Error('SAVE_CORRUPT: 服务端存档视图字段无效，世界未被重置。')
   }
-  const migrated = parsed.schemaVersion === 1 ? { ...parsed, schemaVersion: 2 as const } : parsed
-  if (!isTauri() && parsed.schemaVersion === 1) {
-    localStorage.setItem(storageKey, JSON.stringify(migrated))
-  }
-  return migrated
+  return snapshot
 }
 
-function isBrowserSnapshot(value: unknown): value is BrowserSnapshot | (Omit<BrowserSnapshot, 'schemaVersion'> & { schemaVersion: 1 }) {
+function readLegacyBrowserSnapshot(): BrowserSnapshot | null {
+  try {
+    for (const key of legacyStorageKeys) {
+      const raw = window.localStorage.getItem(key)
+      if (!raw) continue
+      const parsed = JSON.parse(raw) as Record<string, unknown>
+      const migrated = { ...parsed, schemaVersion: 2 }
+      if (isBrowserSnapshot(migrated)) return migrated
+    }
+  } catch {
+    return null
+  }
+  return null
+}
+
+function isBrowserSnapshot(value: unknown): value is BrowserSnapshot {
   if (!value || typeof value !== 'object') return false
   const candidate = value as Record<string, unknown>
-  return (candidate.schemaVersion === 1 || candidate.schemaVersion === 2)
+  return candidate.schemaVersion === 2
     && typeof candidate.contentVersion === 'string'
     && Number.isFinite(candidate.epochTdbMicros)
     && typeof candidate.selectedBodyId === 'string'
