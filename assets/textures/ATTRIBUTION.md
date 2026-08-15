@@ -1,5 +1,8 @@
 # Texture and sky-map attribution
 
+Irregular-body mesh sources are documented separately in
+[`../models/ATTRIBUTION.md`](../models/ATTRIBUTION.md).
+
 ## Solar System Scope
 
 The texture files in this directory are adapted/distributed from the

@@ -1,8 +1,14 @@
 import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js'
 import { atmosphereProfiles, type AtmosphereProfile } from './atmosphere'
+import {
+  irregularShapeBodyIds,
+  surfaceMaterialProfile,
+  volumePreservingBodyScale,
+} from './celestialAppearance'
 import { bodyById, catalog, heliocentricState, localState, type Body } from './model'
 
 const AU = 149_597_870_700
@@ -56,7 +62,7 @@ interface BodyVisual {
   body: Body
   root: THREE.Group
   axisGroup: THREE.Group
-  mesh: THREE.Mesh<THREE.SphereGeometry, THREE.MeshStandardMaterial>
+  mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>
   material: THREE.MeshStandardMaterial
   baseRadius: number
   glow?: THREE.Sprite
@@ -66,6 +72,11 @@ interface BodyVisual {
   nightMesh?: THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMaterial>
   labelObject: CSS2DObject
   label: HTMLDivElement
+}
+
+interface ShapeAsset {
+  geometry: THREE.BufferGeometry
+  map: THREE.Texture | null
 }
 
 interface ScopeModel {
@@ -162,6 +173,10 @@ const uranusRingUrl = new URL('../assets/textures/uranus_ring.png', import.meta.
 const earthCloudUrl = new URL('../assets/textures/earth_clouds.jpg', import.meta.url).href
 const earthNightUrl = new URL('../assets/textures/earth_nightmap.jpg', import.meta.url).href
 const starfieldUrl = new URL('../assets/textures/starfield-j2000-8k.jpg', import.meta.url).href
+const shapeModelUrls: Readonly<Record<(typeof irregularShapeBodyIds)[number], string>> = {
+  phobos: new URL('../assets/models/phobos.glb', import.meta.url).href,
+  deimos: new URL('../assets/models/deimos.glb', import.meta.url).href,
+}
 const GLOBAL_REFERENCE_RADIUS = 178
 const GLOBAL_MAX_RADIUS = 70 * AU
 const UNIFIED_SCALE = GLOBAL_REFERENCE_RADIUS / GLOBAL_MAX_RADIUS
@@ -515,7 +530,7 @@ function disposeGroup(group: THREE.Group) {
   group.traverse((object) => {
     if (object instanceof CSS2DObject) object.element.remove()
     if (object instanceof THREE.Mesh || object instanceof THREE.Line || object instanceof THREE.Points) {
-      object.geometry.dispose()
+      if (!object.geometry.userData.sharedAsset) object.geometry.dispose()
       const materials = Array.isArray(object.material) ? object.material : [object.material]
       materials.forEach((material) => material.dispose())
     }
@@ -543,6 +558,7 @@ export function SolarMap({
   const epochRef = useRef(epochTdbMicros)
   const timeRateRef = useRef(timeRate)
   const selectedRef = useRef(selectedId)
+  const focusIdRef = useRef(focusId)
   const viewPresetValueRef = useRef(viewPreset)
   const overviewBodyScaleCapRef = useRef(overviewBodyScaleCap)
   const onSelectRef = useRef(onSelect)
@@ -554,6 +570,7 @@ export function SolarMap({
   useEffect(() => { epochRef.current = epochTdbMicros }, [epochTdbMicros])
   useEffect(() => { timeRateRef.current = timeRate }, [timeRate])
   useEffect(() => { selectedRef.current = selectedId }, [selectedId])
+  useEffect(() => { focusIdRef.current = focusId }, [focusId])
   useEffect(() => { overviewBodyScaleCapRef.current = overviewBodyScaleCap }, [overviewBodyScaleCap])
   useEffect(() => { onSelectRef.current = onSelect }, [onSelect])
   useEffect(() => { onFocusRef.current = onFocus }, [onFocus])
@@ -583,7 +600,7 @@ export function SolarMap({
     })
     renderer.outputColorSpace = THREE.SRGBColorSpace
     renderer.toneMapping = THREE.ACESFilmicToneMapping
-    renderer.toneMappingExposure = 1.08
+    renderer.toneMappingExposure = 1.12
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5))
     renderer.domElement.className = 'three-canvas'
     container.appendChild(renderer.domElement)
@@ -602,15 +619,19 @@ export function SolarMap({
     controls.maxDistance = 520
     controls.target.set(0, 0, 0)
 
-    scene.add(new THREE.AmbientLight(0x71808a, 0.22))
+    // Space has no broad ambient fill. A very dim cool term keeps controls
+    // usable while leaving the terminator and crater relief legible.
+    scene.add(new THREE.AmbientLight(0x6f8090, 0.075))
     const sunlight = new THREE.PointLight(0xfff1d1, 9.5, 0, 0)
     scene.add(sunlight)
 
     const scopeGroup = new THREE.Group()
     scene.add(scopeGroup)
     const textureLoader = new THREE.TextureLoader()
+    const modelLoader = new GLTFLoader()
     const maxAnisotropy = renderer.capabilities.getMaxAnisotropy()
     const loadedTextures: THREE.Texture[] = []
+    const shapeAssets = new Map<string, ShapeAsset>()
     const starfieldTexture = textureLoader.load(starfieldUrl)
     starfieldTexture.colorSpace = THREE.SRGBColorSpace
     starfieldTexture.mapping = THREE.EquirectangularReflectionMapping
@@ -894,17 +915,32 @@ export function SolarMap({
       for (const body of scope.bodies) {
         const isFocus = body.id === focus.id
         const radius = bodyRadius(body, isFocus)
-        const surfaceTexture = planetTextures.get(body.id) ?? null
+        const shapeAsset = shapeAssets.get(body.id)
+        const surfaceTexture = shapeAsset?.map ?? planetTextures.get(body.id) ?? null
+        const materialProfile = surfaceMaterialProfile(
+          body.id,
+          body.body_class,
+          Boolean(surfaceTexture),
+        )
         const material = new THREE.MeshStandardMaterial({
           color: surfaceTexture ? 0xffffff : bodyColor(body),
           map: surfaceTexture,
-          roughness: body.body_class === 'star' ? 0.42 : 0.78,
-          metalness: body.body_class === 'asteroid' ? 0.18 : 0.03,
+          bumpMap: !shapeAsset && materialProfile.bumpScaleRatio > 0 ? surfaceTexture : null,
+          bumpScale: shapeAsset ? 0 : radius * materialProfile.bumpScaleRatio,
+          roughness: materialProfile.roughness,
+          metalness: 0,
           emissive: body.body_class === 'star' ? 0xffffff : 0x000000,
           emissiveMap: body.body_class === 'star' ? surfaceTexture : null,
           emissiveIntensity: body.body_class === 'star' ? 3.4 : 0,
         })
-        const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, 40, 28), material)
+        const geometry = shapeAsset?.geometry ?? new THREE.SphereGeometry(radius, 64, 48)
+        const mesh = new THREE.Mesh(geometry, material)
+        if (shapeAsset) {
+          const modelRadiusKm = body.mean_radius_m / 1_000
+          mesh.scale.setScalar(radius / modelRadiusKm)
+        } else {
+          mesh.scale.fromArray(volumePreservingBodyScale(body.id))
+        }
         mesh.userData.bodyId = body.id
         const root = new THREE.Group()
         const axisGroup = new THREE.Group()
@@ -923,6 +959,7 @@ export function SolarMap({
             new THREE.SphereGeometry(radius * atmosphereProfile.scale, 56, 40),
             createAtmosphereMaterial(atmosphereProfile, sunWorldPosition),
           )
+          atmosphereMesh.scale.fromArray(volumePreservingBodyScale(body.id))
           atmosphereMesh.renderOrder = 4
           axisGroup.add(atmosphereMesh)
 
@@ -940,6 +977,7 @@ export function SolarMap({
                 atmosphereProfile.weatherSpeed,
               ),
             )
+            weatherMesh.scale.fromArray(volumePreservingBodyScale(body.id))
             weatherMesh.renderOrder = 2
             axisGroup.add(weatherMesh)
           }
@@ -949,11 +987,13 @@ export function SolarMap({
             new THREE.SphereGeometry(radius * 1.006, 48, 32),
             createNightLightsMaterial(earthNightTexture, sunWorldPosition),
           )
+          nightMesh.scale.fromArray(volumePreservingBodyScale(body.id))
           axisGroup.add(nightMesh)
           cloudMesh = new THREE.Mesh(
             new THREE.SphereGeometry(radius * 1.018, 48, 32),
             createEarthCloudMaterial(earthCloudTexture, sunWorldPosition),
           )
+          cloudMesh.scale.fromArray(volumePreservingBodyScale(body.id))
           cloudMesh.renderOrder = 3
           axisGroup.add(cloudMesh)
         }
@@ -1113,6 +1153,45 @@ export function SolarMap({
     resizeObserver.observe(container)
     resize()
     buildScope(focusId)
+    let disposed = false
+    void Promise.allSettled(Object.entries(shapeModelUrls).map(async ([bodyId, url]) => {
+      const gltf = await modelLoader.loadAsync(url)
+      const sourceMesh = gltf.scene.getObjectByProperty('type', 'Mesh') as THREE.Mesh<
+        THREE.BufferGeometry,
+        THREE.MeshStandardMaterial
+      > | undefined
+      if (!sourceMesh) throw new Error(`Shape model ${bodyId} has no mesh`)
+      const sourceMaterial = Array.isArray(sourceMesh.material)
+        ? sourceMesh.material[0]
+        : sourceMesh.material
+      if (!sourceMaterial) throw new Error(`Shape model ${bodyId} has no material`)
+      sourceMesh.geometry.userData.sharedAsset = true
+      if (sourceMaterial.map) {
+        sourceMaterial.map.colorSpace = THREE.SRGBColorSpace
+        sourceMaterial.map.anisotropy = Math.min(maxAnisotropy, 8)
+      }
+      sourceMaterial.dispose()
+      return [bodyId, { geometry: sourceMesh.geometry, map: sourceMaterial.map }] as const
+    })).then((results) => {
+      const assets = results
+        .filter((result): result is PromiseFulfilledResult<readonly [string, ShapeAsset]> => (
+          result.status === 'fulfilled'
+        ))
+        .map((result) => result.value)
+      const failures = results.filter((result) => result.status === 'rejected')
+      if (failures.length > 0) {
+        console.error('Unable to load some irregular-body shape models', failures)
+      }
+      if (disposed) {
+        assets.forEach(([, asset]) => {
+          asset.geometry.dispose()
+          asset.map?.dispose()
+        })
+        return
+      }
+      assets.forEach(([bodyId, asset]) => shapeAssets.set(bodyId, asset))
+      buildScope(focusIdRef.current)
+    })
 
     const projectedWorldPoint = new THREE.Vector3()
     const cameraSpacePoint = new THREE.Vector3()
@@ -1296,6 +1375,7 @@ export function SolarMap({
     animationFrame = requestAnimationFrame(animate)
 
     return () => {
+      disposed = true
       cancelAnimationFrame(animationFrame)
       resizeObserver.disconnect()
       renderer.domElement.removeEventListener('pointerdown', handlePointerDown)
@@ -1305,6 +1385,10 @@ export function SolarMap({
       disposeGroup(scopeGroup)
       renderer.dispose()
       loadedTextures.forEach((texture) => texture.dispose())
+      shapeAssets.forEach((asset) => {
+        asset.geometry.dispose()
+        asset.map?.dispose()
+      })
       renderer.domElement.remove()
       labelRenderer.domElement.remove()
     }
@@ -1323,7 +1407,7 @@ export function SolarMap({
         <span className="status-dot" /> Three.js WebGL · J2000 黄道参考系
         <strong>同一实时星系 · 聚焦保持真实尺寸 · 仅太阳系总览有限放大行星</strong>
         <small className="texture-credit">
-          材质 <a href="https://www.solarsystemscope.com/textures/" target="_blank" rel="noreferrer">Solar System Scope / INOVE</a>
+          材质与模型 <a href="https://www.solarsystemscope.com/textures/" target="_blank" rel="noreferrer">Solar System Scope / INOVE</a>
           {' · '}<a href="https://science.nasa.gov/3d-resources/" target="_blank" rel="noreferrer">NASA / JPL / USGS</a>
           {' · '}<a href="http://www.celestiamotherlode.net/addon/addon_1575.html" target="_blank" rel="noreferrer">John van Vliet / Celestia</a>
           {' · '}星空 <a href="https://svs.gsfc.nasa.gov/4851" target="_blank" rel="noreferrer">NASA SVS / J2000</a>
