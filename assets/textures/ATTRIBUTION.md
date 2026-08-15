@@ -50,6 +50,34 @@ otherwise noted. They are redistributed here as JPEG textures without logos or i
 - `pluto.jpg` — [Pluto global color map](https://commons.wikimedia.org/wiki/File:Pluto_color_mapmosaic.jpg), NASA / Johns Hopkins University Applied Physics Laboratory / Southwest Research Institute; public domain.
 - `ganymede.jpg` — [Map of Ganymede](https://commons.wikimedia.org/wiki/File:Map_of_Ganymede_by_Bj%C3%B6rn_J%C3%B3nsson.jpg), NASA source imagery assembled by Björn Jónsson. The author permits redistribution, modification, and commercial use with attribution; credit: Björn Jónsson.
 
+## NASA/JPL outer-planet moon texture maps
+
+The following equirectangular maps are distributed by NASA Science as image textures for 3D
+models. They are mosaics made from Voyager imagery by USGS and JPL/Caltech. NASA media and JPL
+public-site imagery may generally be reused under the [NASA media usage guidelines](https://www.nasa.gov/nasa-brand-center/images-and-media/)
+and [JPL image use policy](https://www.jpl.nasa.gov/jpl-image-use-policy/); no NASA or JPL logo is
+included. Preserve the source credit and do not imply endorsement.
+
+- `io.jpg` — [Jupiter – Io (B)](https://science.nasa.gov/3d-resources/jupiter-io-b/), Voyager/Galileo mosaic; credit: USGS, JPL, and Caltech.
+- `mimas.jpg`, `enceladus.jpg`, `tethys.jpg`, `dione.jpg`, `rhea.jpg`, and `iapetus.jpg` — NASA Science 3D texture maps ([Mimas](https://science.nasa.gov/3d-resources/saturn-mimas/), [Enceladus](https://science.nasa.gov/3d-resources/saturn-enceladus/), [Tethys](https://science.nasa.gov/3d-resources/saturn-tethys/), [Dione](https://science.nasa.gov/3d-resources/saturn-dione/), [Rhea](https://science.nasa.gov/3d-resources/saturn-rhea/), [Iapetus](https://science.nasa.gov/3d-resources/saturn-iapetus/)); Voyager mosaics; credit: USGS and JPL/Caltech.
+- `ariel.jpg`, `umbriel.jpg`, `titania.jpg`, `oberon.jpg`, and `miranda.jpg` — NASA Science 3D texture maps ([Ariel](https://science.nasa.gov/3d-resources/uranus-ariel/), [Umbriel](https://science.nasa.gov/3d-resources/uranus-umbriel/), [Titania](https://science.nasa.gov/3d-resources/uranus-titania/), [Oberon](https://science.nasa.gov/3d-resources/uranus-oberon/), [Miranda](https://science.nasa.gov/3d-resources/uranus-miranda/)); USGS mosaics from Voyager imagery; credit: USGS/Tammy Becker and JPL/Caltech.
+
+The remaining new moon maps come from USGS Astrogeology preview exports of public planetary
+cartography products. Unobserved areas intentionally remain low-detail or black rather than being
+presented as measured terrain:
+
+- `titan.jpg` — [Titan Cassini ISS global mosaic](https://astrogeology.usgs.gov/search/map/titan_cassini_iss_global_mosaic_4005m), Cassini Imaging Science Subsystem 938 nm albedo data; credit: NASA/JPL-Caltech/Space Science Institute and USGS Astrogeology Science Center.
+- `triton.jpg` — [Triton Voyager 2 global color mosaic](https://astrogeology.usgs.gov/search/map/triton_voyager_2_global_color_mosaic_600m), assembled by Dr. Paul Schenk from NASA/JPL Voyager 2 data; credit: NASA/JPL and Lunar and Planetary Institute.
+- `charon.jpg` — [Charon New Horizons LORRI/MVIC global mosaic](https://astrogeology.usgs.gov/search/map/charon_new_horizons_lorri_mvic_global_mosaic_300m), public-domain USGS product; credit: NASA/JHUAPL/SwRI/LPI and the New Horizons team.
+
+## Uranus ring texture
+
+`uranus_ring.png` is adapted without pixel changes from John van Vliet's
+[Uranus (Artistic)](http://www.celestiamotherlode.net/addon/addon_1575.html) Celestia add-on,
+licensed CC BY-SA. The author derived the radial ring positions from NASA/JPL Voyager 2
+[PIA00142](https://photojournal.jpl.nasa.gov/catalog/PIA00142) imagery and slightly increased
+brightness for visibility. Credit: John van Vliet, CC BY-SA; Voyager 2 source data: NASA/JPL.
+
 ## J2000 star background
 
 `starfield-j2000-8k.jpg` is an sRGB JPEG conversion of the 8192 × 4096 OpenEXR map from

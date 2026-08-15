@@ -118,36 +118,44 @@ function createRadialRingGeometry(innerRadius: number, outerRadius: number, segm
   return geometry
 }
 
-function createRingLineGeometry(radius: number, segments = 192) {
-  const points = Array.from({ length: segments }, (_, index) => {
-    const angle = index / segments * Math.PI * 2
-    return new THREE.Vector3(Math.cos(angle) * radius, Math.sin(angle) * radius, 0)
-  })
-  return new THREE.BufferGeometry().setFromPoints(points)
-}
-
 const textureUrls: Record<string, string> = {
   sun: new URL('../assets/textures/sun.jpg', import.meta.url).href,
   mercury: new URL('../assets/textures/mercury.jpg', import.meta.url).href,
   venus: new URL('../assets/textures/venus_atmosphere.jpg', import.meta.url).href,
   earth: new URL('../assets/textures/earth_daymap.jpg', import.meta.url).href,
   moon: new URL('../assets/textures/moon.jpg', import.meta.url).href,
+  io: new URL('../assets/textures/io.jpg', import.meta.url).href,
   europa: new URL('../assets/textures/europa.jpg', import.meta.url).href,
   ganymede: new URL('../assets/textures/ganymede.jpg', import.meta.url).href,
   callisto: new URL('../assets/textures/callisto.jpg', import.meta.url).href,
   mars: new URL('../assets/textures/mars.jpg', import.meta.url).href,
   jupiter: new URL('../assets/textures/jupiter.jpg', import.meta.url).href,
   saturn: new URL('../assets/textures/saturn.jpg', import.meta.url).href,
+  mimas: new URL('../assets/textures/mimas.jpg', import.meta.url).href,
+  enceladus: new URL('../assets/textures/enceladus.jpg', import.meta.url).href,
+  tethys: new URL('../assets/textures/tethys.jpg', import.meta.url).href,
+  dione: new URL('../assets/textures/dione.jpg', import.meta.url).href,
+  rhea: new URL('../assets/textures/rhea.jpg', import.meta.url).href,
+  titan: new URL('../assets/textures/titan.jpg', import.meta.url).href,
+  iapetus: new URL('../assets/textures/iapetus.jpg', import.meta.url).href,
   uranus: new URL('../assets/textures/uranus.jpg', import.meta.url).href,
+  ariel: new URL('../assets/textures/ariel.jpg', import.meta.url).href,
+  umbriel: new URL('../assets/textures/umbriel.jpg', import.meta.url).href,
+  titania: new URL('../assets/textures/titania.jpg', import.meta.url).href,
+  oberon: new URL('../assets/textures/oberon.jpg', import.meta.url).href,
+  miranda: new URL('../assets/textures/miranda.jpg', import.meta.url).href,
   neptune: new URL('../assets/textures/neptune.jpg', import.meta.url).href,
+  triton: new URL('../assets/textures/triton.jpg', import.meta.url).href,
   ceres: new URL('../assets/textures/ceres.jpg', import.meta.url).href,
   pluto: new URL('../assets/textures/pluto.jpg', import.meta.url).href,
+  charon: new URL('../assets/textures/charon.jpg', import.meta.url).href,
   eris: new URL('../assets/textures/eris.jpg', import.meta.url).href,
   haumea: new URL('../assets/textures/haumea.jpg', import.meta.url).href,
   makemake: new URL('../assets/textures/makemake.jpg', import.meta.url).href,
 }
 
 const saturnRingUrl = new URL('../assets/textures/saturn_ring.png', import.meta.url).href
+const uranusRingUrl = new URL('../assets/textures/uranus_ring.png', import.meta.url).href
 const earthCloudUrl = new URL('../assets/textures/earth_clouds.jpg', import.meta.url).href
 const earthNightUrl = new URL('../assets/textures/earth_nightmap.jpg', import.meta.url).href
 const starfieldUrl = new URL('../assets/textures/starfield-j2000-8k.jpg', import.meta.url).href
@@ -425,6 +433,15 @@ export function SolarMap({
     saturnRingTexture.colorSpace = THREE.SRGBColorSpace
     saturnRingTexture.anisotropy = Math.min(maxAnisotropy, 8)
     loadedTextures.push(saturnRingTexture)
+    const uranusRingTexture = textureLoader.load(uranusRingUrl)
+    uranusRingTexture.colorSpace = THREE.SRGBColorSpace
+    uranusRingTexture.anisotropy = Math.min(maxAnisotropy, 8)
+    // The source is a two-pixel-high radial strip. Mipmaps would collapse its
+    // narrow Voyager-derived bands into a single transparent average.
+    uranusRingTexture.minFilter = THREE.LinearFilter
+    uranusRingTexture.magFilter = THREE.LinearFilter
+    uranusRingTexture.generateMipmaps = false
+    loadedTextures.push(uranusRingTexture)
     const earthCloudTexture = textureLoader.load(earthCloudUrl)
     earthCloudTexture.anisotropy = Math.min(maxAnisotropy, 8)
     loadedTextures.push(earthCloudTexture)
@@ -742,46 +759,23 @@ export function SolarMap({
         }
 
         if (body.id === 'uranus') {
-          const ringGroup = new THREE.Group()
-          const dustyDisc = new THREE.Mesh(
+          const ring = new THREE.Mesh(
             createRadialRingGeometry(radius * 1.42, radius * 2.08),
             new THREE.MeshBasicMaterial({
-              color: 0x789b9f,
+              color: 0xffffff,
+              map: uranusRingTexture,
               side: THREE.DoubleSide,
               transparent: true,
-              opacity: 0.12,
+              opacity: 1,
+              alphaTest: 0.002,
               depthWrite: false,
               toneMapped: false,
             }),
           )
-          dustyDisc.userData.bodyId = body.id
-          ringGroup.add(dustyDisc)
-
-          const uranusBands = [
-            { distance: 1.48, opacity: 0.65 },
-            { distance: 1.57, opacity: 0.5 },
-            { distance: 1.67, opacity: 0.75 },
-            { distance: 1.82, opacity: 0.6 },
-            { distance: 1.98, opacity: 1 },
-          ]
-          for (const band of uranusBands) {
-            const material = new THREE.LineBasicMaterial({
-              color: 0x9bcfd2,
-              transparent: true,
-              opacity: band.opacity,
-              depthWrite: false,
-              toneMapped: false,
-            })
-            const bandMesh = new THREE.LineLoop(
-              createRingLineGeometry(radius * band.distance),
-              material,
-            )
-            bandMesh.userData.bodyId = body.id
-            ringGroup.add(bandMesh)
-          }
-          ringGroup.rotation.x = Math.PI / 2
-          ringGroup.renderOrder = 1
-          axisGroup.add(ringGroup)
+          ring.rotation.x = Math.PI / 2
+          ring.renderOrder = 1
+          ring.userData.bodyId = body.id
+          axisGroup.add(ring)
         }
 
         let glow: THREE.Sprite | undefined
@@ -1097,7 +1091,9 @@ export function SolarMap({
         <span className="status-dot" /> Three.js WebGL · J2000 黄道参考系
         <strong>同一实时星系 · 聚焦保持真实尺寸 · 仅太阳系总览有限放大行星</strong>
         <small className="texture-credit">
-          表面 <a href="https://www.solarsystemscope.com/textures/" target="_blank" rel="noreferrer">Solar System Scope / INOVE</a>
+          材质 <a href="https://www.solarsystemscope.com/textures/" target="_blank" rel="noreferrer">Solar System Scope / INOVE</a>
+          {' · '}<a href="https://science.nasa.gov/3d-resources/" target="_blank" rel="noreferrer">NASA / JPL / USGS</a>
+          {' · '}<a href="http://www.celestiamotherlode.net/addon/addon_1575.html" target="_blank" rel="noreferrer">John van Vliet / Celestia</a>
           {' · '}星空 <a href="https://svs.gsfc.nasa.gov/4851" target="_blank" rel="noreferrer">NASA SVS / J2000</a>
         </small>
       </div>
