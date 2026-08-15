@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js'
+import { atmosphereProfiles, type AtmosphereProfile } from './atmosphere'
 import { bodyById, catalog, heliocentricState, localState, type Body } from './model'
 
 const AU = 149_597_870_700
@@ -59,7 +60,9 @@ interface BodyVisual {
   material: THREE.MeshStandardMaterial
   baseRadius: number
   glow?: THREE.Sprite
-  cloudMesh?: THREE.Mesh<THREE.SphereGeometry, THREE.MeshStandardMaterial>
+  atmosphereMesh?: THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMaterial>
+  weatherMesh?: THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMaterial>
+  cloudMesh?: THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMaterial>
   nightMesh?: THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMaterial>
   labelObject: CSS2DObject
   label: HTMLDivElement
@@ -276,6 +279,180 @@ function createOrbitFlowMaterial(
   })
 }
 
+function createAtmosphereMaterial(
+  profile: AtmosphereProfile,
+  sunPosition: THREE.Vector3,
+): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      atmosphereColor: { value: new THREE.Color(profile.color) },
+      nightColor: { value: new THREE.Color(profile.nightColor) },
+      sunPosition: { value: sunPosition },
+      intensity: { value: profile.intensity },
+      rimPower: { value: profile.rimPower },
+      time: { value: 0 },
+    },
+    vertexShader: `
+      varying vec3 vWorldNormal;
+      varying vec3 vWorldPosition;
+      void main() {
+        vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+        vWorldPosition = worldPosition.xyz;
+        vWorldNormal = normalize(mat3(modelMatrix) * normal);
+        gl_Position = projectionMatrix * viewMatrix * worldPosition;
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 atmosphereColor;
+      uniform vec3 nightColor;
+      uniform vec3 sunPosition;
+      uniform float intensity;
+      uniform float rimPower;
+      uniform float time;
+      varying vec3 vWorldNormal;
+      varying vec3 vWorldPosition;
+      void main() {
+        vec3 normalDirection = normalize(vWorldNormal);
+        vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
+        vec3 sunDirection = normalize(sunPosition - vWorldPosition);
+        float rim = pow(1.0 - abs(dot(normalDirection, viewDirection)), rimPower);
+        float sunFacing = dot(normalDirection, sunDirection);
+        float daylight = smoothstep(-0.38, 0.32, sunFacing);
+        float twilight = exp(-pow((sunFacing + 0.08) * 5.0, 2.0));
+        float shimmer = 0.975 + 0.025 * sin(time * 0.42 + normalDirection.y * 19.0);
+        vec3 scatterColor = mix(nightColor, atmosphereColor, daylight);
+        scatterColor = mix(scatterColor, vec3(1.0, 0.54, 0.28), twilight * 0.24);
+        float alpha = rim * intensity * mix(0.18, 1.0, daylight) * shimmer;
+        if (alpha < 0.006) discard;
+        gl_FragColor = vec4(scatterColor, alpha);
+      }
+    `,
+    side: THREE.BackSide,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    toneMapped: false,
+  })
+}
+
+function createEarthCloudMaterial(
+  cloudMap: THREE.Texture,
+  sunPosition: THREE.Vector3,
+): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      cloudMap: { value: cloudMap },
+      sunPosition: { value: sunPosition },
+      time: { value: 0 },
+    },
+    vertexShader: `
+      varying vec2 vUv;
+      varying vec3 vWorldNormal;
+      varying vec3 vWorldPosition;
+      void main() {
+        vUv = uv;
+        vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+        vWorldPosition = worldPosition.xyz;
+        vWorldNormal = normalize(mat3(modelMatrix) * normal);
+        gl_Position = projectionMatrix * viewMatrix * worldPosition;
+      }
+    `,
+    fragmentShader: `
+      uniform sampler2D cloudMap;
+      uniform vec3 sunPosition;
+      uniform float time;
+      varying vec2 vUv;
+      varying vec3 vWorldNormal;
+      varying vec3 vWorldPosition;
+      void main() {
+        float latitudeShear = sin(vUv.y * 46.0 + time * 0.055) * 0.0018;
+        vec2 primaryUv = vec2(fract(vUv.x + time * 0.00048 + latitudeShear), vUv.y);
+        vec2 highUv = vec2(
+          fract(vUv.x - time * 0.00021 - latitudeShear * 0.55),
+          clamp(vUv.y + sin(vUv.x * 22.0 + time * 0.035) * 0.0014, 0.002, 0.998)
+        );
+        float primaryCloud = texture2D(cloudMap, primaryUv).r;
+        float highCloud = texture2D(cloudMap, highUv).r;
+        float cloud = smoothstep(0.075, 0.78, primaryCloud * 0.83 + highCloud * 0.25);
+        vec3 normalDirection = normalize(vWorldNormal);
+        vec3 sunDirection = normalize(sunPosition - vWorldPosition);
+        vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
+        float sunFacing = dot(normalDirection, sunDirection);
+        float daylight = smoothstep(-0.24, 0.18, sunFacing);
+        float twilight = 1.0 - smoothstep(0.03, 0.34, abs(sunFacing + 0.06));
+        float silverLining = pow(1.0 - max(dot(normalDirection, viewDirection), 0.0), 3.0);
+        vec3 cloudColor = mix(vec3(0.32, 0.43, 0.55), vec3(0.95, 0.985, 1.0), daylight);
+        cloudColor = mix(cloudColor, vec3(1.0, 0.61, 0.37), twilight * daylight * 0.3);
+        cloudColor += vec3(0.24, 0.35, 0.48) * silverLining;
+        float alpha = cloud * (0.26 + daylight * 0.48 + silverLining * 0.22);
+        if (alpha < 0.012) discard;
+        gl_FragColor = vec4(cloudColor, alpha);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+  })
+}
+
+function createGasWeatherMaterial(
+  surfaceMap: THREE.Texture,
+  sunPosition: THREE.Vector3,
+  opacity: number,
+  speed: number,
+): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      surfaceMap: { value: surfaceMap },
+      sunPosition: { value: sunPosition },
+      opacity: { value: opacity },
+      speed: { value: speed },
+      time: { value: 0 },
+    },
+    vertexShader: `
+      varying vec2 vUv;
+      varying vec3 vWorldNormal;
+      varying vec3 vWorldPosition;
+      void main() {
+        vUv = uv;
+        vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+        vWorldPosition = worldPosition.xyz;
+        vWorldNormal = normalize(mat3(modelMatrix) * normal);
+        gl_Position = projectionMatrix * viewMatrix * worldPosition;
+      }
+    `,
+    fragmentShader: `
+      uniform sampler2D surfaceMap;
+      uniform vec3 sunPosition;
+      uniform float opacity;
+      uniform float speed;
+      uniform float time;
+      varying vec2 vUv;
+      varying vec3 vWorldNormal;
+      varying vec3 vWorldPosition;
+      void main() {
+        float latitude = vUv.y * 2.0 - 1.0;
+        float jet = sin(vUv.y * 69.0);
+        float jetDirection = mix(-1.0, 1.0, step(0.0, jet));
+        float billow = sin(vUv.x * 34.0 + vUv.y * 57.0 + time * 0.12 * speed);
+        float drift = time * 0.000075 * speed * jetDirection * (0.45 + 0.55 * abs(jet));
+        drift += billow * 0.0015 * (1.0 - latitude * latitude);
+        vec2 weatherUv = vec2(fract(vUv.x + drift), vUv.y);
+        vec3 baseColor = texture2D(surfaceMap, vUv).rgb;
+        vec3 weatherColor = texture2D(surfaceMap, weatherUv).rgb;
+        float detail = length(weatherColor - baseColor);
+        vec3 normalDirection = normalize(vWorldNormal);
+        vec3 sunDirection = normalize(sunPosition - vWorldPosition);
+        float daylight = smoothstep(-0.22, 0.22, dot(normalDirection, sunDirection));
+        float weatherAlpha = opacity * (0.42 + min(detail * 2.8, 0.58)) * mix(0.22, 1.0, daylight);
+        if (weatherAlpha < 0.008) discard;
+        gl_FragColor = vec4(weatherColor * mix(0.7, 1.08, daylight), weatherAlpha);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+  })
+}
+
 function createNightLightsMaterial(nightMap: THREE.Texture, sunPosition: THREE.Vector3): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     uniforms: {
@@ -443,6 +620,7 @@ export function SolarMap({
     uranusRingTexture.generateMipmaps = false
     loadedTextures.push(uranusRingTexture)
     const earthCloudTexture = textureLoader.load(earthCloudUrl)
+    earthCloudTexture.wrapS = THREE.RepeatWrapping
     earthCloudTexture.anisotropy = Math.min(maxAnisotropy, 8)
     loadedTextures.push(earthCloudTexture)
     const earthNightTexture = textureLoader.load(earthNightUrl)
@@ -717,6 +895,35 @@ export function SolarMap({
 
         let cloudMesh: BodyVisual['cloudMesh']
         let nightMesh: BodyVisual['nightMesh']
+        let atmosphereMesh: BodyVisual['atmosphereMesh']
+        let weatherMesh: BodyVisual['weatherMesh']
+        const atmosphereProfile = atmosphereProfiles[body.id]
+        if (atmosphereProfile) {
+          atmosphereMesh = new THREE.Mesh(
+            new THREE.SphereGeometry(radius * atmosphereProfile.scale, 56, 40),
+            createAtmosphereMaterial(atmosphereProfile, sunWorldPosition),
+          )
+          atmosphereMesh.renderOrder = 4
+          axisGroup.add(atmosphereMesh)
+
+          if (
+            surfaceTexture
+            && atmosphereProfile.weatherOpacity
+            && atmosphereProfile.weatherSpeed
+          ) {
+            weatherMesh = new THREE.Mesh(
+              new THREE.SphereGeometry(radius * 1.009, 56, 40),
+              createGasWeatherMaterial(
+                surfaceTexture,
+                sunWorldPosition,
+                atmosphereProfile.weatherOpacity,
+                atmosphereProfile.weatherSpeed,
+              ),
+            )
+            weatherMesh.renderOrder = 2
+            axisGroup.add(weatherMesh)
+          }
+        }
         if (body.id === 'earth') {
           nightMesh = new THREE.Mesh(
             new THREE.SphereGeometry(radius * 1.006, 48, 32),
@@ -725,16 +932,9 @@ export function SolarMap({
           axisGroup.add(nightMesh)
           cloudMesh = new THREE.Mesh(
             new THREE.SphereGeometry(radius * 1.018, 48, 32),
-            new THREE.MeshStandardMaterial({
-              color: 0xf4fbff,
-              alphaMap: earthCloudTexture,
-              transparent: true,
-              opacity: 0.68,
-              roughness: 0.96,
-              metalness: 0,
-              depthWrite: false,
-            }),
+            createEarthCloudMaterial(earthCloudTexture, sunWorldPosition),
           )
+          cloudMesh.renderOrder = 3
           axisGroup.add(cloudMesh)
         }
 
@@ -822,6 +1022,8 @@ export function SolarMap({
           material,
           baseRadius: radius,
           glow,
+          atmosphereMesh,
+          weatherMesh,
           cloudMesh,
           nightMesh,
           labelObject,
@@ -1015,11 +1217,21 @@ export function SolarMap({
           const rotation = (epochRef.current / 1e6 / visual.body.rotation_period_s * Math.PI * 2) % (Math.PI * 2)
           visual.mesh.rotation.y = rotation
           if (visual.nightMesh) visual.nightMesh.rotation.y = rotation
+          if (visual.weatherMesh) visual.weatherMesh.rotation.y = rotation
           if (visual.cloudMesh) {
             visual.cloudMesh.rotation.y = (
               epochRef.current / 1e6 / (visual.body.rotation_period_s * 0.985) * Math.PI * 2 + cloudPhase
             ) % (Math.PI * 2)
           }
+        }
+        if (visual.atmosphereMesh) {
+          visual.atmosphereMesh.material.uniforms.time.value = now / 1_000
+        }
+        if (visual.weatherMesh) {
+          visual.weatherMesh.material.uniforms.time.value = now / 1_000
+        }
+        if (visual.cloudMesh) {
+          visual.cloudMesh.material.uniforms.time.value = now / 1_000
         }
         const selected = visual.body.id === selectedRef.current
         visual.material.emissive.setHex(visual.body.body_class === 'star' ? 0xffffff : 0x000000)
