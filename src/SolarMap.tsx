@@ -293,6 +293,8 @@ function createAtmosphereMaterial(
       time: { value: 0 },
     },
     vertexShader: `
+      #include <common>
+      #include <logdepthbuf_pars_vertex>
       varying vec3 vWorldNormal;
       varying vec3 vWorldPosition;
       void main() {
@@ -300,9 +302,11 @@ function createAtmosphereMaterial(
         vWorldPosition = worldPosition.xyz;
         vWorldNormal = normalize(mat3(modelMatrix) * normal);
         gl_Position = projectionMatrix * viewMatrix * worldPosition;
+        #include <logdepthbuf_vertex>
       }
     `,
     fragmentShader: `
+      #include <logdepthbuf_pars_fragment>
       uniform vec3 atmosphereColor;
       uniform vec3 nightColor;
       uniform vec3 sunPosition;
@@ -312,6 +316,7 @@ function createAtmosphereMaterial(
       varying vec3 vWorldNormal;
       varying vec3 vWorldPosition;
       void main() {
+        #include <logdepthbuf_fragment>
         vec3 normalDirection = normalize(vWorldNormal);
         vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
         vec3 sunDirection = normalize(sunPosition - vWorldPosition);
@@ -346,6 +351,8 @@ function createEarthCloudMaterial(
       time: { value: 0 },
     },
     vertexShader: `
+      #include <common>
+      #include <logdepthbuf_pars_vertex>
       varying vec2 vUv;
       varying vec3 vWorldNormal;
       varying vec3 vWorldPosition;
@@ -355,9 +362,11 @@ function createEarthCloudMaterial(
         vWorldPosition = worldPosition.xyz;
         vWorldNormal = normalize(mat3(modelMatrix) * normal);
         gl_Position = projectionMatrix * viewMatrix * worldPosition;
+        #include <logdepthbuf_vertex>
       }
     `,
     fragmentShader: `
+      #include <logdepthbuf_pars_fragment>
       uniform sampler2D cloudMap;
       uniform vec3 sunPosition;
       uniform float time;
@@ -365,6 +374,7 @@ function createEarthCloudMaterial(
       varying vec3 vWorldNormal;
       varying vec3 vWorldPosition;
       void main() {
+        #include <logdepthbuf_fragment>
         float latitudeShear = sin(vUv.y * 46.0 + time * 0.055) * 0.0018;
         vec2 primaryUv = vec2(fract(vUv.x + time * 0.00048 + latitudeShear), vUv.y);
         vec2 highUv = vec2(
@@ -409,6 +419,8 @@ function createGasWeatherMaterial(
       time: { value: 0 },
     },
     vertexShader: `
+      #include <common>
+      #include <logdepthbuf_pars_vertex>
       varying vec2 vUv;
       varying vec3 vWorldNormal;
       varying vec3 vWorldPosition;
@@ -418,9 +430,11 @@ function createGasWeatherMaterial(
         vWorldPosition = worldPosition.xyz;
         vWorldNormal = normalize(mat3(modelMatrix) * normal);
         gl_Position = projectionMatrix * viewMatrix * worldPosition;
+        #include <logdepthbuf_vertex>
       }
     `,
     fragmentShader: `
+      #include <logdepthbuf_pars_fragment>
       uniform sampler2D surfaceMap;
       uniform vec3 sunPosition;
       uniform float opacity;
@@ -430,6 +444,7 @@ function createGasWeatherMaterial(
       varying vec3 vWorldNormal;
       varying vec3 vWorldPosition;
       void main() {
+        #include <logdepthbuf_fragment>
         float latitude = vUv.y * 2.0 - 1.0;
         float jet = sin(vUv.y * 69.0);
         float jetDirection = mix(-1.0, 1.0, step(0.0, jet));
@@ -460,6 +475,8 @@ function createNightLightsMaterial(nightMap: THREE.Texture, sunPosition: THREE.V
       sunPosition: { value: sunPosition },
     },
     vertexShader: `
+      #include <common>
+      #include <logdepthbuf_pars_vertex>
       varying vec2 vUv;
       varying vec3 vWorldNormal;
       varying vec3 vWorldPosition;
@@ -469,15 +486,18 @@ function createNightLightsMaterial(nightMap: THREE.Texture, sunPosition: THREE.V
         vWorldPosition = worldPosition.xyz;
         vWorldNormal = normalize(mat3(modelMatrix) * normal);
         gl_Position = projectionMatrix * viewMatrix * worldPosition;
+        #include <logdepthbuf_vertex>
       }
     `,
     fragmentShader: `
+      #include <logdepthbuf_pars_fragment>
       uniform sampler2D nightMap;
       uniform vec3 sunPosition;
       varying vec2 vUv;
       varying vec3 vWorldNormal;
       varying vec3 vWorldPosition;
       void main() {
+        #include <logdepthbuf_fragment>
         vec3 toSun = normalize(sunPosition - vWorldPosition);
         float solarFacing = dot(normalize(vWorldNormal), toSun);
         float night = 1.0 - smoothstep(-0.18, 0.05, solarFacing);
