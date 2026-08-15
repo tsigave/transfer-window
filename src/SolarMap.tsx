@@ -10,6 +10,7 @@ import {
   volumePreservingBodyScale,
 } from './celestialAppearance'
 import { bodyById, catalog, heliocentricState, localState, type Body } from './model'
+import { focusedSurfaceAssets, type FocusedSurfaceAsset } from './surfaceAssets'
 
 const AU = 149_597_870_700
 const palette: Record<string, number> = {
@@ -77,6 +78,15 @@ interface BodyVisual {
 interface ShapeAsset {
   geometry: THREE.BufferGeometry
   map: THREE.Texture | null
+}
+
+interface LoadedFocusedSurface {
+  albedo: THREE.Texture
+  normal?: THREE.Texture
+  height?: THREE.Texture
+  roughness?: THREE.Texture
+  cloud?: THREE.Texture
+  night?: THREE.Texture
 }
 
 interface ScopeModel {
@@ -168,7 +178,7 @@ const textureUrls: Record<string, string> = {
   makemake: new URL('../assets/textures/makemake.jpg', import.meta.url).href,
 }
 
-const saturnRingUrl = new URL('../assets/textures/saturn_ring.png', import.meta.url).href
+const saturnRingUrl = new URL('../assets/textures/highres/saturn_ring.png', import.meta.url).href
 const uranusRingUrl = new URL('../assets/textures/uranus_ring.png', import.meta.url).href
 const earthCloudUrl = new URL('../assets/textures/earth_clouds.jpg', import.meta.url).href
 const earthNightUrl = new URL('../assets/textures/earth_nightmap.jpg', import.meta.url).href
@@ -186,6 +196,12 @@ const VISUAL_FOCUS_OFFSET_RADII = 3.6
 const SOLAR_OVERVIEW_FRACTION = 0.72
 const OVERVIEW_BODY_SCALE_EXPONENT = 0.72
 const SATELLITE_LABEL_MIN_SCREEN_WIDTH = 0.05
+
+const provenanceLabels = {
+  observed: '高分辨率观测数据',
+  observed_with_artistic_relief: '观测底图 · 程序化微地形',
+  artistic_reconstruction: '4K 艺术重建 · 非观测地形',
+} as const
 
 function sunAppearance(distanceAu: number, overview: boolean) {
   if (overview) {
@@ -554,6 +570,7 @@ export function SolarMap({
   const solarDistanceAu = focusBody.id === 'sun'
     ? 0
     : Math.hypot(...heliocentricState(focusBody, epochTdbMicros).position_m) / AU
+  const focusedSurfaceProvenance = focusedSurfaceAssets[focusBody.id]?.provenance
   const containerRef = useRef<HTMLDivElement>(null)
   const epochRef = useRef(epochTdbMicros)
   const timeRateRef = useRef(timeRate)
@@ -600,7 +617,7 @@ export function SolarMap({
     })
     renderer.outputColorSpace = THREE.SRGBColorSpace
     renderer.toneMapping = THREE.ACESFilmicToneMapping
-    renderer.toneMappingExposure = 1.12
+    renderer.toneMappingExposure = 1.04
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5))
     renderer.domElement.className = 'three-canvas'
     container.appendChild(renderer.domElement)
@@ -619,10 +636,10 @@ export function SolarMap({
     controls.maxDistance = 520
     controls.target.set(0, 0, 0)
 
-    // Space has no broad ambient fill. A very dim cool term keeps controls
-    // usable while leaving the terminator and crater relief legible.
-    scene.add(new THREE.AmbientLight(0x6f8090, 0.075))
-    const sunlight = new THREE.PointLight(0xfff1d1, 9.5, 0, 0)
+    // Space has almost no diffuse fill; this trace amount prevents total
+    // quantisation on the night side without flattening the terminator.
+    scene.add(new THREE.AmbientLight(0xffffff, 0.018))
+    const sunlight = new THREE.PointLight(0xfff8ef, 9.5, 0, 0)
     scene.add(sunlight)
 
     const scopeGroup = new THREE.Group()
@@ -631,6 +648,8 @@ export function SolarMap({
     const modelLoader = new GLTFLoader()
     const maxAnisotropy = renderer.capabilities.getMaxAnisotropy()
     const loadedTextures: THREE.Texture[] = []
+    let focusedTextures: THREE.Texture[] = []
+    let focusedTextureGeneration = 0
     const shapeAssets = new Map<string, ShapeAsset>()
     const starfieldTexture = textureLoader.load(starfieldUrl)
     starfieldTexture.colorSpace = THREE.SRGBColorSpace
@@ -884,7 +903,80 @@ export function SolarMap({
       orbitByBodyId.set(body.id, orbitVisuals[orbitVisuals.length - 1])
     }
 
+    const loadFocusedTexture = async (url: string, color: boolean) => {
+      const texture = await textureLoader.loadAsync(url)
+      texture.colorSpace = color ? THREE.SRGBColorSpace : THREE.NoColorSpace
+      texture.wrapS = THREE.RepeatWrapping
+      texture.wrapT = THREE.ClampToEdgeWrapping
+      texture.anisotropy = Math.min(maxAnisotropy, 8)
+      return texture
+    }
+
+    const upgradeFocusedSurface = async (
+      visual: BodyVisual,
+      asset: FocusedSurfaceAsset,
+      generation: number,
+    ) => {
+      const channelRequests = [
+        ['albedo', asset.albedo, true],
+        ['normal', asset.normal, false],
+        ['height', asset.height, false],
+        ['roughness', asset.roughness, false],
+        ['cloud', asset.cloud, true],
+        ['night', asset.night, true],
+      ].filter((request): request is [keyof LoadedFocusedSurface, string, boolean] => (
+        typeof request[1] === 'string'
+      ))
+      const results = await Promise.allSettled(channelRequests.map(async ([channel, url, color]) => (
+        [channel, await loadFocusedTexture(url, color)] as const
+      )))
+      const loaded = results
+        .filter((result) => result.status === 'fulfilled')
+        .map((result) => result.value)
+      const failures = results.filter((result) => result.status === 'rejected')
+      if (generation !== focusedTextureGeneration || failures.length > 0) {
+        loaded.forEach(([, texture]) => texture.dispose())
+        if (failures.length > 0) console.error(`Unable to load focused surface for ${visual.body.id}`, failures)
+        return
+      }
+
+      const surface = Object.fromEntries(loaded) as unknown as LoadedFocusedSurface
+      focusedTextures = loaded.map(([, texture]) => texture)
+      visual.material.map = surface.albedo
+      if (visual.body.body_class === 'star') visual.material.emissiveMap = surface.albedo
+      if (surface.normal) {
+        visual.material.bumpMap = null
+        visual.material.normalMap = surface.normal
+        visual.material.normalMapType = THREE.TangentSpaceNormalMap
+        visual.material.normalScale.setScalar(asset.normalScale ?? 1)
+      }
+      if (surface.height && asset.reliefScaleRatio) {
+        const reliefScale = visual.baseRadius * asset.reliefScaleRatio
+        visual.material.displacementMap = surface.height
+        visual.material.displacementScale = reliefScale
+        visual.material.displacementBias = reliefScale * (asset.reliefBiasRatio ?? -0.5)
+      }
+      if (surface.roughness) {
+        visual.material.roughness = 1
+        visual.material.roughnessMap = surface.roughness
+      }
+      visual.material.needsUpdate = true
+      if (visual.weatherMesh) {
+        visual.weatherMesh.material.uniforms.surfaceMap.value = surface.albedo
+      }
+      if (visual.cloudMesh && surface.cloud) {
+        visual.cloudMesh.material.uniforms.cloudMap.value = surface.cloud
+      }
+      if (visual.nightMesh && surface.night) {
+        visual.nightMesh.material.uniforms.nightMap.value = surface.night
+      }
+    }
+
     const buildScope = (nextFocusId: string) => {
+      focusedTextureGeneration += 1
+      const textureGeneration = focusedTextureGeneration
+      focusedTextures.forEach((texture) => texture.dispose())
+      focusedTextures = []
       disposeGroup(scopeGroup)
       visuals = []
       orbitVisuals = []
@@ -933,7 +1025,11 @@ export function SolarMap({
           emissiveMap: body.body_class === 'star' ? surfaceTexture : null,
           emissiveIntensity: body.body_class === 'star' ? 3.4 : 0,
         })
-        const geometry = shapeAsset?.geometry ?? new THREE.SphereGeometry(radius, 64, 48)
+        const geometry = shapeAsset?.geometry ?? new THREE.SphereGeometry(
+          radius,
+          isFocus ? 160 : 64,
+          isFocus ? 96 : 48,
+        )
         const mesh = new THREE.Mesh(geometry, material)
         if (shapeAsset) {
           const modelRadiusKm = body.mean_radius_m / 1_000
@@ -1089,6 +1185,11 @@ export function SolarMap({
           labelObject,
           label,
         })
+      }
+      const focusedVisual = visuals.find((visual) => visual.body.id === focus.id)
+      const focusedAsset = focusedSurfaceAssets[focus.id]
+      if (focusedVisual && focusedAsset && !shapeAssets.has(focus.id)) {
+        void upgradeFocusedSurface(focusedVisual, focusedAsset, textureGeneration)
       }
       setCameraPreset(viewPresetValueRef.current)
     }
@@ -1376,6 +1477,7 @@ export function SolarMap({
 
     return () => {
       disposed = true
+      focusedTextureGeneration += 1
       cancelAnimationFrame(animationFrame)
       resizeObserver.disconnect()
       renderer.domElement.removeEventListener('pointerdown', handlePointerDown)
@@ -1385,6 +1487,7 @@ export function SolarMap({
       disposeGroup(scopeGroup)
       renderer.dispose()
       loadedTextures.forEach((texture) => texture.dispose())
+      focusedTextures.forEach((texture) => texture.dispose())
       shapeAssets.forEach((asset) => {
         asset.geometry.dispose()
         asset.map?.dispose()
@@ -1406,6 +1509,11 @@ export function SolarMap({
       <div className="map-caption">
         <span className="status-dot" /> Three.js WebGL · J2000 黄道参考系
         <strong>同一实时星系 · 聚焦保持真实尺寸 · 仅太阳系总览有限放大行星</strong>
+        {focusedSurfaceProvenance && (
+          <small className={`surface-provenance ${focusedSurfaceProvenance}`}>
+            聚焦表面：{provenanceLabels[focusedSurfaceProvenance]}
+          </small>
+        )}
         <small className="texture-credit">
           材质与模型 <a href="https://www.solarsystemscope.com/textures/" target="_blank" rel="noreferrer">Solar System Scope / INOVE</a>
           {' · '}<a href="https://science.nasa.gov/3d-resources/" target="_blank" rel="noreferrer">NASA / JPL / USGS</a>

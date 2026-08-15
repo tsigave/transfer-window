@@ -1,5 +1,6 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
+import sharp from 'sharp'
 import { describe, expect, it } from 'vitest'
 import { atmosphereProfiles } from './atmosphere'
 import {
@@ -7,6 +8,8 @@ import {
   surfaceMaterialProfile,
   volumePreservingBodyScale,
 } from './celestialAppearance'
+import { catalog } from './model'
+import { focusedSurfaceAssets } from './surfaceAssets'
 import solarMapSource from './SolarMap.tsx?raw'
 
 function readGlbJson(fileName: string) {
@@ -83,6 +86,77 @@ describe('celestial surface appearance', () => {
     expect(moon.bumpScaleRatio).toBeGreaterThan(0)
     expect(jupiter.bumpScaleRatio).toBe(0)
     expect(solarMapSource).toContain('metalness: 0')
+  })
+
+  it('provides a high-resolution focus surface for every spherical catalog body', () => {
+    const irregularBodyIds = new Set<string>(irregularShapeBodyIds)
+    const sphericalBodyIds = catalog.bodies
+      .map((body) => body.id)
+      .filter((bodyId) => !irregularBodyIds.has(bodyId))
+      .sort()
+
+    expect(Object.keys(focusedSurfaceAssets).sort()).toEqual(sphericalBodyIds)
+    expect(focusedSurfaceAssets.earth).toEqual(expect.objectContaining({
+      normal: expect.any(String),
+      height: expect.any(String),
+      roughness: expect.any(String),
+      cloud: expect.any(String),
+      night: expect.any(String),
+      provenance: 'observed',
+    }))
+    expect(focusedSurfaceAssets.moon).toEqual(expect.objectContaining({
+      normal: expect.any(String),
+      height: expect.any(String),
+      provenance: 'observed',
+    }))
+  })
+
+  it('labels completed global surfaces as artistic reconstruction', () => {
+    expect([
+      'ceres', 'eris', 'haumea', 'makemake', 'oberon', 'triton', 'charon',
+      'vesta', 'pallas', 'hygiea', 'psyche', 'chiron', 'arrokoth',
+    ].map((bodyId) => focusedSurfaceAssets[bodyId].provenance))
+      .toEqual(Array.from({ length: 13 }, () => 'artistic_reconstruction'))
+    expect(solarMapSource).toContain('聚焦表面：')
+  })
+
+  it('keeps every focus texture at 4K or higher', async () => {
+    const textureNames = readdirSync(resolve('assets/textures/highres'))
+    expect(textureNames.length).toBeGreaterThan(80)
+
+    await Promise.all(textureNames.map(async (textureName) => {
+      const metadata = await sharp(resolve('assets/textures/highres', textureName)).metadata()
+      expect(metadata.width, textureName).toBeGreaterThanOrEqual(4096)
+      if (textureName !== 'saturn_ring.png') {
+        expect(metadata.height, textureName).toBeGreaterThanOrEqual(2048)
+      }
+    }))
+  })
+
+  it('keeps the LOLA normal map free of scanline-channel banding', async () => {
+    const { data, info } = await sharp(resolve('assets/textures/highres/moon_normal.webp'))
+      .raw()
+      .toBuffer({ resolveWithObject: true })
+    let horizontalDifference = 0
+    let verticalDifference = 0
+    let samples = 0
+    for (let y = 32; y < info.height - 32; y += 31) {
+      for (let x = 32; x < info.width - 32; x += 31) {
+        const center = (y * info.width + x) * info.channels
+        const east = center + info.channels
+        const south = center + info.width * info.channels
+        for (let channel = 0; channel < 3; channel += 1) {
+          horizontalDifference += Math.abs(data[east + channel] - data[center + channel])
+          verticalDifference += Math.abs(data[south + channel] - data[center + channel])
+          samples += 1
+        }
+      }
+    }
+
+    const horizontalAverage = horizontalDifference / samples
+    const verticalAverage = verticalDifference / samples
+    expect(horizontalAverage).toBeGreaterThan(0.1)
+    expect(verticalAverage / horizontalAverage).toBeLessThan(2.5)
   })
 
   it('renders giant planets as volume-preserving oblate spheroids', () => {

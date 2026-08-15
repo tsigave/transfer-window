@@ -23,6 +23,7 @@ button { color: inherit; cursor: pointer; }
 .toast { position: fixed; right: 24px; bottom: 82px; width: 330px; padding: 13px 35px 13px 15px; z-index: 10; background: #102a2a; border: 1px solid rgba(115,197,189,.35); box-shadow: 0 12px 40px #0008; }.toast.error { background: #2a1717; border-color: rgba(220,100,90,.4); }.toast b, .toast span { display: block; font-size: 10px; }.toast span { color: #8fa09f; margin-top: 3px; }.toast button { position: absolute; right: 7px; top: 7px; background: none; border: 0; }
 @media (max-width: 1250px) { .app-shell { grid-template-columns: 255px minmax(510px,1fr) 315px; }.topbar { grid-template-columns: 255px 1fr 315px; }.detail-panel { padding: 22px 18px; } }
 .texture-credit { display: block; margin-top: 4px; color: #526668; pointer-events: auto; }.texture-credit a { color: #688f8d; text-decoration: none; }.texture-credit a:hover { color: var(--teal); }
+.surface-provenance { display: block; margin-top: 4px; color: #718f8e; font: 7px 'IBM Plex Mono'; letter-spacing: .04em; }.surface-provenance.artistic_reconstruction { color: #b18f54; }
 .three-label { margin: -10px 0 0 12px; transition: opacity .2s ease, color .2s ease; }.three-label.minor, .three-label.selected { transform: none; }
 .three-label.selected { color: #f2c873; text-shadow: 0 1px 5px #000, 0 0 10px #000, 0 0 8px rgba(242,200,115,.28); }
 .three-label.selected b { font-weight: 700; }

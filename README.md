@@ -1,7 +1,7 @@
 # Transfer Window
 
 <!-- transfer-window-current-version -->
-当前项目版本：`v0.2.1`
+当前项目版本：`v0.2.2`
 
 Transfer Window 是一款统一物理事实层上的近未来行星际航运与工业经营游戏。本仓库已完成
 [alpha-v0.1「完整太阳系」](./docs/roadmap/alpha-v0.1-完整太阳系.md)与
